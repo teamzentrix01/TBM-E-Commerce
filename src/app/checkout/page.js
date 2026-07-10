@@ -1,0 +1,760 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  CreditCard,
+  MapPin,
+  Minus,
+  Plus,
+  ShoppingBag,
+  Smartphone,
+  Truck,
+} from "lucide-react";
+import AppHeader, { PageFooter } from "@/components/AppHeader";
+import { useStore } from "@/context/StoreContext";
+import { fetchProducts, resolveStoreByPincode } from "@/lib/api";
+import {
+  cancelCustomerOrder,
+  getCurrentCustomer,
+  submitOrder,
+  verifyRazorpayPayment,
+  fetchCustomerAddresses,
+  saveCustomerAddress,
+} from "@/lib/ecommerceApi";
+
+const DELIVERY_FEE = 39;
+const FREE_DELIVERY_MINIMUM = 499;
+const slots = [
+  "Today, 5 PM - 7 PM",
+  "Today, 7 PM - 9 PM",
+  "Tomorrow, 9 AM - 11 AM",
+];
+const money = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0));
+
+function loadRazorpayCheckout() {
+  if (typeof window === "undefined") return Promise.reject(new Error("Browser payment is unavailable"));
+  if (window.Razorpay) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector("script[src='https://checkout.razorpay.com/v1/checkout.js']");
+    if (existing) {
+      existing.addEventListener("load", resolve, { once: true });
+      existing.addEventListener("error", reject, { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error("Unable to load payment checkout"));
+    document.body.appendChild(script);
+  });
+}
+
+function openRazorpayCheckout({ payment, order, customer }) {
+  return new Promise((resolve, reject) => {
+    const checkout = new window.Razorpay({
+      key: payment.keyId,
+      amount: payment.amount,
+      currency: payment.currency,
+      name: payment.name,
+      description: payment.description,
+      order_id: payment.orderId,
+      prefill: {
+        name: customer.name,
+        contact: customer.phone,
+      },
+      notes: {
+        orderNumber: order.order_number,
+      },
+      theme: { color: "#b90000" },
+      handler: resolve,
+      modal: {
+        ondismiss: () => reject(new Error("Payment was cancelled")),
+      },
+    });
+    checkout.open();
+  });
+}
+
+function ProductImage({ product }) {
+  if (product.image_url) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img alt={product.name} src={product.image_url} />;
+  }
+  return <ShoppingBag />;
+}
+
+export default function Checkout() {
+  const {
+    activeStore,
+    addresses,
+    cart,
+    cartCount,
+    cartSavings,
+    cartTotal,
+    pincode,
+    setAddresses,
+    setCart,
+    updateCart,
+  } = useStore();
+  const [step, setStep] = useState(1);
+  const [selectedAddress, setSelectedAddress] = useState(0);
+  const [slot, setSlot] = useState(slots[0]);
+  const [payment, setPayment] = useState("cod");
+  const [complete, setComplete] = useState(false);
+  const [placedOrder, setPlacedOrder] = useState(null);
+  const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [addressChecking, setAddressChecking] = useState(false);
+  const [recommendations, setRecommendations] = useState([]);
+  const [address, setAddress] = useState({
+    name: "",
+    phone: "",
+    line: "",
+    city: "",
+    pincode: pincode || "",
+  });
+
+  const deliveryFee =
+    cartTotal >= FREE_DELIVERY_MINIMUM || cartTotal === 0
+      ? 0
+      : DELIVERY_FEE;
+  const payableTotal = cartTotal + deliveryFee;
+
+  useEffect(() => {
+    if (pincode) {
+      setAddress((current) => ({
+        ...current,
+        pincode: current.pincode || pincode,
+      }));
+    }
+  }, [pincode]);
+
+  useEffect(() => {
+    getCurrentCustomer()
+      .then(({ user }) => {
+        setAddress((current) => ({
+          ...current,
+          name: current.name || user?.name || "",
+          phone: current.phone || user?.phone || "",
+        }));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchCustomerAddresses()
+      .then((data) => {
+        setAddresses(data || []);
+      })
+      .catch(() => {
+        // Keeps local storage fallback
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!activeStore?.id) return;
+    const controller = new AbortController();
+    fetchProducts({
+      storeId: activeStore.id,
+      pageSize: 12,
+      signal: controller.signal,
+    })
+      .then((data) =>
+        setRecommendations(
+          (data.records || []).map((product) => ({
+            ...product,
+            store_id: activeStore.id,
+          })),
+        ),
+      )
+      .catch((requestError) => {
+        if (requestError.name !== "AbortError") {
+          console.error("Failed to load recommendations", requestError);
+        }
+      });
+    return () => controller.abort();
+  }, [activeStore?.id]);
+
+  async function saveAddress(event) {
+    event.preventDefault();
+    if (
+      !address.name.trim() ||
+      address.phone.length !== 10 ||
+      !address.line.trim() ||
+      !address.city.trim() ||
+      address.pincode.length !== 6
+    ) {
+      setError("Please complete all address fields correctly.");
+      return;
+    }
+
+    setAddressChecking(true);
+    setError("");
+    try {
+      const data = await resolveStoreByPincode(address.pincode);
+      if (
+        activeStore &&
+        String(data.store.id) !== String(activeStore.id)
+      ) {
+        setError(
+          `Your cart belongs to ${activeStore.name}. Use an address served by this store, or change your store and rebuild the cart.`,
+        );
+        return;
+      }
+      let savedAddr = address;
+      try {
+        savedAddr = await saveCustomerAddress(address);
+      } catch (authError) {
+        // User not logged in, we will keep it local
+      }
+      setAddresses((current) => [...current, savedAddr]);
+      setSelectedAddress(addresses.length);
+      setStep(3);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setAddressChecking(false);
+    }
+  }
+
+  async function placeOrder() {
+    if (!cart.length || orderSubmitting) return;
+    const chosen = addresses[selectedAddress] || address;
+    setOrderSubmitting(true);
+    setError("");
+    try {
+      const data = await submitOrder(
+        {
+          storeId: activeStore?.id,
+          items: cart.map((item) => ({
+            productId: item.id,
+            qty: item.qty,
+          })),
+          address: chosen,
+          deliverySlot: slot,
+          paymentMethod:
+            payment === "online"
+              ? "razorpay"
+              : payment === "upi"
+                ? "upi_on_delivery"
+                : "cod",
+        },
+        crypto.randomUUID(),
+      );
+      let confirmedOrder = data.order;
+      if (payment === "online") {
+        if (!data.payment) {
+          throw new Error("Online payment is not available right now.");
+        }
+        try {
+          await loadRazorpayCheckout();
+          const gatewayResponse = await openRazorpayCheckout({
+            payment: data.payment,
+            order: data.order,
+            customer: chosen,
+          });
+          const verified = await verifyRazorpayPayment(
+            data.order.id,
+            gatewayResponse,
+          );
+          confirmedOrder = verified.order;
+        } catch (paymentError) {
+          await cancelCustomerOrder(data.order.id).catch(() => {});
+          throw paymentError;
+        }
+      }
+      setPlacedOrder(confirmedOrder);
+      setCart([]);
+      setComplete(true);
+    } catch (requestError) {
+      if (requestError.status === 401) {
+        setError("Please login with OTP before placing your order.");
+      } else {
+        setError(requestError.message);
+      }
+    } finally {
+      setOrderSubmitting(false);
+    }
+  }
+
+  if (complete) {
+    return (
+      <>
+        <AppHeader />
+        <main className="confirmation">
+          <div className="confirmation-icon">
+            <Check />
+          </div>
+          <span>ORDER CONFIRMED</span>
+          <h1>Thank you for shopping with us.</h1>
+          <p>
+            Order <b>{placedOrder?.order_number}</b> has been sent to{" "}
+            {placedOrder?.store_name || "your store"} for acceptance. Requested slot:{" "}
+            <b>{slot}</b>.
+          </p>
+          <div>
+            <Link href="/orders">View my orders</Link>
+            <Link href="/">Continue shopping</Link>
+          </div>
+        </main>
+        <PageFooter />
+      </>
+    );
+  }
+
+  if (!cart.length) {
+    return (
+      <>
+        <AppHeader />
+        <div className="route-empty checkout-empty">
+          <ShoppingBag />
+          <h1>Your cart is empty</h1>
+          <p>Add products before starting checkout.</p>
+          <Link href="/">Browse products</Link>
+        </div>
+        <PageFooter />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <AppHeader />
+      <main className="checkout-page grocery-checkout">
+        <div className="checkout-title">
+          <h1>My Cart</h1>
+          <p>Total Items: {cartCount}</p>
+        </div>
+        <div className="checkout-top">
+          <Link href="/">
+            <ChevronLeft /> Continue shopping
+          </Link>
+          <div>
+            {["Cart", "Address", "Delivery & payment"].map(
+              (label, index) => (
+                <span
+                  key={label}
+                  className={step >= index + 1 ? "active" : ""}
+                >
+                  <b>{step > index + 1 ? <Check /> : index + 1}</b>
+                  {label}
+                </span>
+              ),
+            )}
+          </div>
+        </div>
+
+        <div className="checkout-layout">
+          <section className="checkout-content">
+            {step === 1 && (
+              <>
+                <div className="checkout-card cart-table-card">
+                  <div className="cart-address-row">
+                    <MapPin />
+                    <span>
+                      {activeStore
+                        ? `${activeStore.name}, ${activeStore.city}`
+                        : "Select your delivery store"}
+                    </span>
+                    <button onClick={() => setStep(2)}>
+                      Add address
+                    </button>
+                  </div>
+                  <label className="delivery-select">
+                    <b>Delivery instructions</b>
+                    <select defaultValue="">
+                      <option value="">Select delivery preference</option>
+                      <option>Leave at doorstep</option>
+                      <option>Call before delivery</option>
+                      <option>Deliver after 6 PM</option>
+                    </select>
+                  </label>
+                  <div className="cart-table-head">
+                    <span>Cart Items</span>
+                    <span>Unit Price</span>
+                    <span>Quantity</span>
+                    <span>Sub Total</span>
+                  </div>
+                  <div className="checkout-items">
+                    {cart.map((item) => (
+                      <article key={item.id}>
+                        <div className="checkout-thumb">
+                          <ProductImage product={item} />
+                        </div>
+                        <div>
+                          <h3>{item.name}</h3>
+                          <small>{item.unit || "1 unit"}</small>
+                        </div>
+                        <div className="unit-price">
+                          {item.mrp > item.selling_price && (
+                            <del>{money(item.mrp)}</del>
+                          )}
+                          <strong>{money(item.selling_price)}</strong>
+                          {item.mrp > item.selling_price && (
+                            <small>
+                              You save{" "}
+                              {money(
+                                (item.mrp - item.selling_price) *
+                                  item.qty,
+                              )}
+                            </small>
+                          )}
+                        </div>
+                        <div className="qty-control">
+                          <button onClick={() => updateCart(item, -1)}>
+                            <Minus />
+                          </button>
+                          <b>{item.qty}</b>
+                          <button
+                            disabled={
+                              item.qty >= Math.floor(Number(item.stock))
+                            }
+                            onClick={() => updateCart(item, 1)}
+                          >
+                            <Plus />
+                          </button>
+                        </div>
+                        <strong>
+                          {money(item.selling_price * item.qty)}
+                        </strong>
+                      </article>
+                    ))}
+                  </div>
+                  <button
+                    className="next-button"
+                    onClick={() => setStep(2)}
+                  >
+                    Select address <ChevronRight />
+                  </button>
+                </div>
+
+                {recommendations.filter(
+                  (product) =>
+                    !cart.some(
+                      (item) =>
+                        String(item.id) === String(product.id),
+                    ),
+                ).length > 0 && (
+                  <div className="checkout-card recommended-card">
+                    <h2>You may also need</h2>
+                    <div className="recommended-list">
+                      {recommendations
+                        .filter(
+                          (product) =>
+                            !cart.some(
+                              (item) =>
+                                String(item.id) ===
+                                String(product.id),
+                            ),
+                        )
+                        .slice(0, 8)
+                        .map((product) => (
+                          <article
+                            className="recommended-item"
+                            key={product.id}
+                          >
+                            {product.discount_percent > 0 && (
+                              <span className="recommended-item-discount">
+                                {Math.round(product.discount_percent)}% OFF
+                              </span>
+                            )}
+                            <div className="recommended-item-media">
+                              <ProductImage product={product} />
+                            </div>
+                            <div className="recommended-item-info">
+                              <span className="recommended-item-brand">
+                                {product.brand_name ||
+                                  product.category_name ||
+                                  "THE BUYZAAR MART"}
+                              </span>
+                              <span className="recommended-item-name">
+                                {product.name}
+                              </span>
+                              <span className="recommended-item-unit">
+                                {product.unit || "1 unit"}
+                              </span>
+                              <div className="recommended-item-price-row">
+                                <div className="recommended-item-price-details">
+                                  {product.mrp >
+                                    product.selling_price && (
+                                    <del>{money(product.mrp)}</del>
+                                  )}
+                                  <b>{money(product.selling_price)}</b>
+                                </div>
+                                <button
+                                  className="add-button"
+                                  onClick={() =>
+                                    updateCart(product, 1)
+                                  }
+                                >
+                                  ADD
+                                </button>
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {step === 2 && (
+              <div className="checkout-card">
+                <div className="checkout-card-title">
+                  <span>02</span>
+                  <div>
+                    <h1>Delivery address</h1>
+                    <p>Where should we deliver your order?</p>
+                  </div>
+                </div>
+                {addresses.length > 0 && (
+                  <div className="saved-addresses">
+                    {addresses.map((item, index) => (
+                      <button
+                        key={`${item.phone}-${index}`}
+                        className={
+                          selectedAddress === index ? "selected" : ""
+                        }
+                        onClick={() => setSelectedAddress(index)}
+                      >
+                        <MapPin />
+                        <span>
+                          <b>{item.name}</b>
+                          <small>
+                            {item.line}, {item.city} - {item.pincode}
+                          </small>
+                          <small>{item.phone}</small>
+                        </span>
+                        {selectedAddress === index && <Check />}
+                      </button>
+                    ))}
+                    <button
+                      className="next-button"
+                      onClick={() => setStep(3)}
+                    >
+                      Deliver here <ChevronRight />
+                    </button>
+                    <div className="or-line">
+                      <span>or add another address</span>
+                    </div>
+                  </div>
+                )}
+                <form className="address-form" onSubmit={saveAddress}>
+                  <label>
+                    Receiver name
+                    <input
+                      value={address.name}
+                      onChange={(event) =>
+                        setAddress({
+                          ...address,
+                          name: event.target.value,
+                        })
+                      }
+                      placeholder="Full name"
+                    />
+                  </label>
+                  <label>
+                    Mobile number
+                    <input
+                      inputMode="numeric"
+                      maxLength={10}
+                      value={address.phone}
+                      onChange={(event) =>
+                        setAddress({
+                          ...address,
+                          phone: event.target.value.replace(/\D/g, ""),
+                        })
+                      }
+                      placeholder="10 digit number"
+                    />
+                  </label>
+                  <label className="full-field">
+                    House, floor and street
+                    <input
+                      value={address.line}
+                      onChange={(event) =>
+                        setAddress({
+                          ...address,
+                          line: event.target.value,
+                        })
+                      }
+                      placeholder="Complete address"
+                    />
+                  </label>
+                  <label>
+                    City
+                    <input
+                      value={address.city}
+                      onChange={(event) =>
+                        setAddress({
+                          ...address,
+                          city: event.target.value,
+                        })
+                      }
+                      placeholder="City"
+                    />
+                  </label>
+                  <label>
+                    Pincode
+                    <input
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={address.pincode}
+                      onChange={(event) =>
+                        setAddress({
+                          ...address,
+                          pincode: event.target.value.replace(/\D/g, ""),
+                        })
+                      }
+                    />
+                  </label>
+                  {error && <p className="form-error">{error}</p>}
+                  <button
+                    className="next-button"
+                    disabled={addressChecking}
+                  >
+                    {addressChecking
+                      ? "Checking serviceability..."
+                      : "Save and continue"}{" "}
+                    <ChevronRight />
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="checkout-card">
+                <div className="checkout-card-title">
+                  <span>03</span>
+                  <div>
+                    <h1>Delivery & payment</h1>
+                    <p>
+                      Choose a convenient slot and payment method.
+                    </p>
+                  </div>
+                </div>
+                <h2 className="option-title">
+                  <Clock3 /> Delivery slot
+                </h2>
+                <div className="option-grid">
+                  {slots.map((item) => (
+                    <button
+                      type="button"
+                      key={item}
+                      className={slot === item ? "selected" : ""}
+                      onClick={() => setSlot(item)}
+                    >
+                      <Truck />
+                      <span>
+                        <b>{item.split(", ")[0]}</b>
+                        <small>{item.split(", ")[1]}</small>
+                      </span>
+                      {slot === item && <Check />}
+                    </button>
+                  ))}
+                </div>
+                <h2 className="option-title">
+                  <CreditCard /> Payment method
+                </h2>
+                <div className="payment-options">
+                  <button
+                    type="button"
+                    className={payment === "cod" ? "selected" : ""}
+                    onClick={() => setPayment("cod")}
+                  >
+                    <span>
+                      <b>Cash on delivery</b>
+                      <small>Pay when your order arrives</small>
+                    </span>
+                    {payment === "cod" && <Check />}
+                  </button>
+                  <button
+                    type="button"
+                    className={payment === "upi" ? "selected" : ""}
+                    onClick={() => setPayment("upi")}
+                  >
+                    <span>
+                      <b>UPI on delivery</b>
+                      <small>Scan and pay at your doorstep</small>
+                    </span>
+                    {payment === "upi" && <Check />}
+                  </button>
+                  <button
+                    type="button"
+                    className={payment === "online" ? "selected" : ""}
+                    onClick={() => setPayment("online")}
+                  >
+                    <Smartphone />
+                    <span>
+                      <b>Pay online</b>
+                      <small>UPI, cards and net banking</small>
+                    </span>
+                    {payment === "online" && <Check />}
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="place-order"
+                  disabled={orderSubmitting}
+                  onClick={placeOrder}
+                >
+                  {orderSubmitting
+                    ? "Placing order..."
+                    : `Place order - ${money(payableTotal)}`}{" "}
+                  <ChevronRight />
+                </button>
+                {error && <p className="form-error">{error}</p>}
+              </div>
+            )}
+          </section>
+
+          <aside className="order-summary bill-details">
+            <h2>Bill Details</h2>
+            <p>
+              <span>Cart value</span>
+              <b>{money(cartTotal)}</b>
+            </p>
+            <p>
+              <span>Delivery charge</span>
+              <b className={deliveryFee === 0 ? "free" : ""}>
+                {deliveryFee === 0 ? "FREE" : money(deliveryFee)}
+              </b>
+            </p>
+            <div>
+              <span>Total amount payable</span>
+              <strong>{money(payableTotal)}</strong>
+            </div>
+            <p className="savings-row">
+              <span>Total savings</span>
+              <b>{money(cartSavings)}</b>
+            </p>
+            {step === 1 && (
+              <button
+                className="bill-cta"
+                onClick={() => setStep(2)}
+              >
+                Select address
+              </button>
+            )}
+            <small>
+              <Check /> Taxes included in product prices
+            </small>
+          </aside>
+        </div>
+      </main>
+      <PageFooter />
+    </>
+  );
+}
