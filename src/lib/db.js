@@ -122,11 +122,19 @@ export async function ensureEcommerceSchema() {
         city VARCHAR(120) NOT NULL,
         state VARCHAR(120),
         pincode VARCHAR(10) NOT NULL,
+        latitude DOUBLE PRECISION,
+        longitude DOUBLE PRECISION,
+        location_accuracy_m DOUBLE PRECISION,
         label VARCHAR(40) NOT NULL DEFAULT 'Home',
         is_default BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+
+      ALTER TABLE ecommerce_addresses
+        ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS location_accuracy_m DOUBLE PRECISION;
 
       CREATE TABLE IF NOT EXISTS ecommerce_orders (
         id BIGSERIAL PRIMARY KEY,
@@ -155,11 +163,44 @@ export async function ensureEcommerceSchema() {
         packed_at TIMESTAMPTZ,
         dispatched_at TIMESTAMPTZ,
         delivered_at TIMESTAMPTZ,
+        delivery_agent_id BIGINT,
+        delivery_agent_user_id BIGINT,
+        delivery_agent_name VARCHAR(160),
+        delivery_agent_phone VARCHAR(30),
+        rider_latitude DOUBLE PRECISION,
+        rider_longitude DOUBLE PRECISION,
+        rider_location_accuracy_m DOUBLE PRECISION,
+        rider_location_updated_at TIMESTAMPTZ,
+        picked_up_at TIMESTAMPTZ,
         cancelled_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         UNIQUE(user_id, idempotency_key)
       );
+
+      ALTER TABLE ecommerce_orders
+        ADD COLUMN IF NOT EXISTS delivery_agent_id BIGINT,
+        ADD COLUMN IF NOT EXISTS delivery_agent_user_id BIGINT,
+        ADD COLUMN IF NOT EXISTS delivery_agent_name VARCHAR(160),
+        ADD COLUMN IF NOT EXISTS delivery_agent_phone VARCHAR(30),
+        ADD COLUMN IF NOT EXISTS rider_latitude DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS rider_longitude DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS rider_location_accuracy_m DOUBLE PRECISION,
+        ADD COLUMN IF NOT EXISTS rider_location_updated_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS picked_up_at TIMESTAMPTZ;
+
+      CREATE TABLE IF NOT EXISTS ecommerce_delivery_location_events (
+        id BIGSERIAL PRIMARY KEY,
+        order_id BIGINT NOT NULL REFERENCES ecommerce_orders(id) ON DELETE CASCADE,
+        delivery_agent_id BIGINT NOT NULL,
+        latitude DOUBLE PRECISION NOT NULL,
+        longitude DOUBLE PRECISION NOT NULL,
+        accuracy_m DOUBLE PRECISION,
+        recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_ecommerce_delivery_location_order
+        ON ecommerce_delivery_location_events(order_id, recorded_at DESC);
 
       CREATE TABLE IF NOT EXISTS ecommerce_order_items (
         id BIGSERIAL PRIMARY KEY,

@@ -8,6 +8,8 @@ import {
   Clock3,
   CreditCard,
   History,
+  ArrowRight,
+  LogOut,
   Mail,
   MapPin,
   Phone,
@@ -45,6 +47,7 @@ export default function Account() {
   const { addresses, setAddresses } = useStore();
   const [addressManagerOpen, setAddressManagerOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [profileEditOpen, setProfileEditOpen] = useState(false);
   
   // State for new address form
   const [showAddressForm, setShowAddressForm] = useState(false);
@@ -62,13 +65,14 @@ export default function Account() {
   const displayPhone = phone || "Mobile number not added";
 
   function focusProfileForm() {
-    document.getElementById("profile-edit-form")?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
-    });
+    setProfileEditOpen(true);
     setTimeout(() => {
+      document.getElementById("profile-edit-form")?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
       document.getElementById("profile-name-input")?.focus();
-    }, 250);
+    }, 100);
   }
 
   async function handleDeleteAddress(indexToDelete) {
@@ -353,153 +357,128 @@ export default function Account() {
   return (
     <>
       <AppHeader />
-      <main className="route-page narrow-page">
-        <div className="route-title">
+      <main className="route-page modern-account-page">
+        <div className="modern-account-heading">
           <span>YOUR PROFILE</span>
           <h1>My account</h1>
-          <p>Manage personal details and delivery preferences.</p>
+          <p>Everything about your profile, orders and deliveries in one place.</p>
         </div>
-        <section className="profile-dashboard">
-          <div className="profile-hero-card">
-            <div className="profile-photo-wrap">
-              <div className="profile-avatar">
-                {profile.image_url ? (
-                  <img src={profile.image_url} alt={displayName} referrerPolicy="no-referrer" />
-                ) : (
-                  <span>{displayName.slice(0, 1).toUpperCase()}</span>
-                )}
-              </div>
-              <button type="button" aria-label="Edit profile" onClick={focusProfileForm}>
-                <Pencil />
-              </button>
-            </div>
+
+        <section className="modern-profile-hero">
+          <div className="modern-profile-avatar">
+            {profile.image_url ? (
+              <img src={profile.image_url} alt={displayName} referrerPolicy="no-referrer" />
+            ) : (
+              <span>{displayName.slice(0, 1).toUpperCase()}</span>
+            )}
+          </div>
+          <div className="modern-profile-copy">
+            <small>WELCOME BACK</small>
             <h2>{displayName}</h2>
             <p>{displayEmail}</p>
-            <div className="profile-identity-row">
+            <div>
               <span><Phone /> {displayPhone}</span>
-              <span><ShieldCheck /> Logged in</span>
+              <span><ShieldCheck /> Verified account</span>
             </div>
-            <button className="profile-logout" onClick={logout}>Logout</button>
           </div>
-
-          <div className="profile-action-list">
-            <button type="button" onClick={focusProfileForm}>
-              <span><UserRound /></span>
-              <b>Edit profile</b>
-              <Pencil />
+          <div className="modern-profile-actions">
+            <button type="button" className="edit" onClick={focusProfileForm}>
+              <Pencil /> Edit profile
             </button>
-            <button type="button" onClick={() => setAddressManagerOpen(true)}>
-              <span><MapPin /></span>
-              <b>Saved addresses</b>
-              <Pencil />
+            <button type="button" className="logout" onClick={logout}>
+              <LogOut /> Logout
             </button>
-            <Link href="/orders">
-              <span><History /></span>
-              <b>Order history</b>
-              <Pencil />
-            </Link>
-            <button type="button" onClick={() => setSupportOpen(true)}>
-              <span><Phone /></span>
-              <b>Help center</b>
-              <Pencil />
-            </button>
-          </div>
-
-          <div className="profile-details-card">
-            <h2>Personal information</h2>
-            <div>
-              <span>Full name</span>
-              <b>{displayName}</b>
-            </div>
-            <div>
-              <span>Email address</span>
-              <b>{displayEmail}</b>
-            </div>
-            <div>
-              <span>Mobile number</span>
-              <b>{displayPhone}</b>
-            </div>
-            <div>
-              <span>Saved addresses</span>
-              <b>{addresses.length}</b>
-            </div>
           </div>
         </section>
-        <form id="profile-edit-form" className="profile-form profile-edit-card" onSubmit={saveProfile}>
-          <div className="profile-edit-head">
-            <span><UserRound /></span>
-            <div>
-              <h2>Edit profile</h2>
-              <p>Changes update your checkout details automatically.</p>
-            </div>
-          </div>
-          <label>
-            Full name
-            <input
-              id="profile-name-input"
-              required
-              value={profile.name}
-              onChange={(event) =>
-                setProfile({ ...profile, name: event.target.value })
-              }
-            />
-          </label>
-          <label>
-            <Phone /> Mobile number
-            <input
-              inputMode="numeric"
-              maxLength={10}
-              value={phone}
-              onChange={(event) =>
-                setPhone(event.target.value.replace(/\D/g, ""))
-              }
-              placeholder="Add mobile number"
-            />
-          </label>
-          <label>
-            Email address
-            <input
-              type="email"
-              value={profile.email}
-              onChange={(event) =>
-                setProfile({ ...profile, email: event.target.value })
-              }
-              placeholder="you@example.com"
-            />
-          </label>
-          {error && <p className="form-error">{error}</p>}
-          <button className="primary-action" disabled={submitting}>
-            {submitting ? "Saving..." : "Save changes"}
-          </button>
-          {saved && (
-            <p className="success-message">
-              <Check /> Profile saved
-            </p>
-          )}
-        </form>
-        <section className="account-links">
-          <button onClick={() => setAddressManagerOpen(true)}>
-            <MapPin />
-            <span>
-              <b>Saved addresses</b>
-              <small>Add or update during checkout</small>
-            </span>
-          </button>
-          <button onClick={() => setSupportOpen(true)}>
-            <Phone />
-            <span>
-              <b>Customer support</b>
-              <small>Contact support for order assistance</small>
-            </span>
+
+        <section className="modern-account-shortcuts" aria-label="Account shortcuts">
+          <Link href="/orders">
+            <span><History /></span>
+            <div><b>My orders</b><small>Track and review purchases</small></div>
+            <ArrowRight />
+          </Link>
+          <button type="button" onClick={() => setAddressManagerOpen(true)}>
+            <span><MapPin /></span>
+            <div><b>Saved addresses</b><small>{addresses.length} saved for delivery</small></div>
+            <ArrowRight />
           </button>
           <Link href="/checkout">
-            <CreditCard />
-            <span>
-              <b>Payment & checkout</b>
-              <small>Manage payment during checkout</small>
-            </span>
+            <span><CreditCard /></span>
+            <div><b>Cart & checkout</b><small>Review payment and delivery</small></div>
+            <ArrowRight />
           </Link>
+          <button type="button" onClick={() => setSupportOpen(true)}>
+            <span><Phone /></span>
+            <div><b>Help & support</b><small>We are here to help</small></div>
+            <ArrowRight />
+          </button>
         </section>
+
+        <section className="modern-account-details">
+          <header>
+            <div>
+              <small>PERSONAL INFORMATION</small>
+              <h2>Your details</h2>
+            </div>
+            <button type="button" onClick={focusProfileForm}><Pencil /> Edit</button>
+          </header>
+          <div className="modern-account-detail-grid">
+            <div><span><UserRound /></span><small>Full name</small><b>{displayName}</b></div>
+            <div><span><Mail /></span><small>Email address</small><b>{displayEmail}</b></div>
+            <div><span><Phone /></span><small>Mobile number</small><b>{displayPhone}</b></div>
+            <div><span><MapPin /></span><small>Saved addresses</small><b>{addresses.length}</b></div>
+          </div>
+        </section>
+
+        {profileEditOpen && (
+          <form id="profile-edit-form" className="profile-form modern-profile-form" onSubmit={saveProfile}>
+            <div className="modern-profile-form-head">
+              <span><UserRound /></span>
+              <div>
+                <small>EDIT PROFILE</small>
+                <h2>Update your details</h2>
+                <p>Changes update your checkout details automatically.</p>
+              </div>
+              <button type="button" aria-label="Close edit profile" onClick={() => setProfileEditOpen(false)}><X /></button>
+            </div>
+            <label>
+              Full name
+              <input
+                id="profile-name-input"
+                required
+                value={profile.name}
+                onChange={(event) => setProfile({ ...profile, name: event.target.value })}
+              />
+            </label>
+            <label>
+              Mobile number
+              <input
+                inputMode="numeric"
+                maxLength={10}
+                value={phone}
+                onChange={(event) => setPhone(event.target.value.replace(/\D/g, ""))}
+                placeholder="Add mobile number"
+              />
+            </label>
+            <label>
+              Email address
+              <input
+                type="email"
+                value={profile.email}
+                onChange={(event) => setProfile({ ...profile, email: event.target.value })}
+                placeholder="you@example.com"
+              />
+            </label>
+            {error && <p className="form-error">{error}</p>}
+            <div className="modern-profile-form-actions">
+              <button type="button" onClick={() => setProfileEditOpen(false)}>Cancel</button>
+              <button type="submit" className="primary-action" disabled={submitting}>
+                {submitting ? "Saving..." : "Save changes"}
+              </button>
+            </div>
+            {saved && <p className="success-message"><Check /> Profile saved</p>}
+          </form>
+        )}
       </main>
       <PageFooter />
 

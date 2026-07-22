@@ -116,6 +116,7 @@ export default function Checkout() {
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [addressChecking, setAddressChecking] = useState(false);
+  const [locationStatus, setLocationStatus] = useState("");
   const [recommendations, setRecommendations] = useState([]);
   const [address, setAddress] = useState({
     name: "",
@@ -123,7 +124,82 @@ export default function Checkout() {
     line: "",
     city: "",
     pincode: pincode || "",
+    latitude: null,
+    longitude: null,
+    locationAccuracyM: null,
   });
+
+  function getCurrentCoordinates() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Location is not supported by this browser."));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        ({ coords }) =>
+          resolve({
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            locationAccuracyM: coords.accuracy,
+          }),
+        () => reject(new Error("Allow location access to check 5 km delivery service.")),
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      );
+    });
+  }
+
+  async function captureAddressLocation() {
+    setAddressChecking(true);
+    setError("");
+    setLocationStatus("Getting your delivery location...");
+    try {
+      const coordinates = await getCurrentCoordinates();
+      setAddress((current) => ({ ...current, ...coordinates }));
+      setLocationStatus("Delivery location captured");
+    } catch (locationError) {
+      setLocationStatus("");
+      setError(locationError.message);
+    } finally {
+      setAddressChecking(false);
+    }
+  }
+
+  async function verifyServiceability(candidate) {
+    const data = await resolveStoreByPincode(candidate.pincode, candidate);
+    if (activeStore && String(data.store.id) !== String(activeStore.id)) {
+      throw new Error(
+        `Your cart belongs to ${activeStore.name}. Use a location within its delivery area, or change your store and rebuild the cart.`,
+      );
+    }
+    return data;
+  }
+
+  async function continueWithSavedAddress() {
+    const selected = addresses[selectedAddress];
+    if (!selected) return;
+    setAddressChecking(true);
+    setError("");
+    try {
+      const hasCoordinates =
+        selected.latitude != null && selected.longitude != null;
+      const locatedAddress = hasCoordinates
+        ? selected
+        : { ...selected, ...(await getCurrentCoordinates()) };
+      await verifyServiceability(locatedAddress);
+      if (!hasCoordinates) {
+        setAddresses((current) =>
+          current.map((item, index) =>
+            index === selectedAddress ? locatedAddress : item,
+          ),
+        );
+      }
+      setStep(3);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setAddressChecking(false);
+    }
+  }
 
   const deliveryFee =
     cartTotal >= FREE_DELIVERY_MINIMUM || cartTotal === 0
@@ -193,25 +269,18 @@ export default function Checkout() {
       address.phone.length !== 10 ||
       !address.line.trim() ||
       !address.city.trim() ||
-      address.pincode.length !== 6
+      address.pincode.length !== 6 ||
+      address.latitude == null ||
+      address.longitude == null
     ) {
-      setError("Please complete all address fields correctly.");
+      setError("Complete the address and use your current delivery location.");
       return;
     }
 
     setAddressChecking(true);
     setError("");
     try {
-      const data = await resolveStoreByPincode(address.pincode);
-      if (
-        activeStore &&
-        String(data.store.id) !== String(activeStore.id)
-      ) {
-        setError(
-          `Your cart belongs to ${activeStore.name}. Use an address served by this store, or change your store and rebuild the cart.`,
-        );
-        return;
-      }
+      await verifyServiceability(address);
       let savedAddr = address;
       try {
         savedAddr = await saveCustomerAddress(address);
@@ -333,8 +402,9 @@ export default function Checkout() {
       <AppHeader />
       <main className="checkout-page grocery-checkout">
         <div className="checkout-title">
-          <h1>My Cart</h1>
-          <p>Total Items: {cartCount}</p>
+          <span>SECURE CHECKOUT</span>
+          <h1>Your basket</h1>
+          <p>{cartCount} {cartCount === 1 ? "item" : "items"} ready for checkout</p>
         </div>
         <div className="checkout-top">
           <Link href="/">
@@ -439,74 +509,6 @@ export default function Checkout() {
                   </button>
                 </div>
 
-                {recommendations.filter(
-                  (product) =>
-                    !cart.some(
-                      (item) =>
-                        String(item.id) === String(product.id),
-                    ),
-                ).length > 0 && (
-                  <div className="checkout-card recommended-card">
-                    <h2>You may also need</h2>
-                    <div className="recommended-list">
-                      {recommendations
-                        .filter(
-                          (product) =>
-                            !cart.some(
-                              (item) =>
-                                String(item.id) ===
-                                String(product.id),
-                            ),
-                        )
-                        .slice(0, 8)
-                        .map((product) => (
-                          <article
-                            className="recommended-item"
-                            key={product.id}
-                          >
-                            {product.discount_percent > 0 && (
-                              <span className="recommended-item-discount">
-                                {Math.round(product.discount_percent)}% OFF
-                              </span>
-                            )}
-                            <div className="recommended-item-media">
-                              <ProductImage product={product} />
-                            </div>
-                            <div className="recommended-item-info">
-                              <span className="recommended-item-brand">
-                                {product.brand_name ||
-                                  product.category_name ||
-                                  "THE BUYZAAR MART"}
-                              </span>
-                              <span className="recommended-item-name">
-                                {product.name}
-                              </span>
-                              <span className="recommended-item-unit">
-                                {product.unit || "1 unit"}
-                              </span>
-                              <div className="recommended-item-price-row">
-                                <div className="recommended-item-price-details">
-                                  {product.mrp >
-                                    product.selling_price && (
-                                    <del>{money(product.mrp)}</del>
-                                  )}
-                                  <b>{money(product.selling_price)}</b>
-                                </div>
-                                <button
-                                  className="add-button"
-                                  onClick={() =>
-                                    updateCart(product, 1)
-                                  }
-                                >
-                                  ADD
-                                </button>
-                              </div>
-                            </div>
-                          </article>
-                        ))}
-                    </div>
-                  </div>
-                )}
               </>
             )}
 
@@ -542,9 +544,11 @@ export default function Checkout() {
                     ))}
                     <button
                       className="next-button"
-                      onClick={() => setStep(3)}
+                      onClick={continueWithSavedAddress}
+                      disabled={addressChecking}
                     >
-                      Deliver here <ChevronRight />
+                      {addressChecking ? "Checking 5 km service..." : "Deliver here"}{" "}
+                      <ChevronRight />
                     </button>
                     <div className="or-line">
                       <span>or add another address</span>
@@ -620,6 +624,23 @@ export default function Checkout() {
                       }
                     />
                   </label>
+                  <div className="full-field">
+                    <button
+                      type="button"
+                      className="next-button"
+                      onClick={captureAddressLocation}
+                      disabled={addressChecking}
+                    >
+                      <MapPin />
+                      {address.latitude != null
+                        ? "Update delivery location"
+                        : "Use current delivery location"}
+                    </button>
+                    {locationStatus && <small>{locationStatus}</small>}
+                    {address.latitude != null && (
+                      <small>Location will be checked within a 5 km store radius.</small>
+                    )}
+                  </div>
                   {error && <p className="form-error">{error}</p>}
                   <button
                     className="next-button"
@@ -752,6 +773,61 @@ export default function Checkout() {
               <Check /> Taxes included in product prices
             </small>
           </aside>
+
+          {step === 1 && recommendations.filter(
+            (product) => !cart.some((item) => String(item.id) === String(product.id)),
+          ).length > 0 && (
+            <div className="checkout-card recommended-card">
+              <div className="recommended-card-heading">
+                <div>
+                  <span>QUICK ADD</span>
+                  <h2>You may also need</h2>
+                </div>
+                <small>Popular from your selected store</small>
+              </div>
+              <div className="recommended-list">
+                {recommendations
+                  .filter(
+                    (product) =>
+                      !cart.some((item) => String(item.id) === String(product.id)),
+                  )
+                  .slice(0, 8)
+                  .map((product) => (
+                    <article className="recommended-item" key={product.id}>
+                      {product.discount_percent > 0 && (
+                        <span className="recommended-item-discount">
+                          {Math.round(product.discount_percent)}% OFF
+                        </span>
+                      )}
+                      <div className="recommended-item-media">
+                        <ProductImage product={product} />
+                      </div>
+                      <div className="recommended-item-info">
+                        <span className="recommended-item-brand">
+                          {product.brand_name || product.category_name || "THE BUYZAAR MART"}
+                        </span>
+                        <span className="recommended-item-name">{product.name}</span>
+                        <span className="recommended-item-unit">{product.unit || "1 unit"}</span>
+                        <div className="recommended-item-price-row">
+                          <div className="recommended-item-price-details">
+                            <b>{money(product.selling_price)}</b>
+                            {product.mrp > product.selling_price && (
+                              <del>{money(product.mrp)}</del>
+                            )}
+                          </div>
+                          <button
+                            className="add-button"
+                            onClick={() => updateCart(product, 1)}
+                          >
+                            <Plus /> Add
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+              </div>
+            </div>
+          )}
         </div>
       </main>
       <PageFooter />

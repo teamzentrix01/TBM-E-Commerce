@@ -43,6 +43,13 @@ export function secureEqual(left, right) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+export function deliveryOtp(orderId) {
+  const digest = createHmac("sha256", authSecret())
+    .update(`delivery:${Number(orderId)}`)
+    .digest();
+  return String(digest.readUInt32BE(0) % 10000).padStart(4, "0");
+}
+
 export function hashSessionToken(token) {
   return createHash("sha256").update(token).digest("hex");
 }

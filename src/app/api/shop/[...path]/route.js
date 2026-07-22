@@ -26,6 +26,8 @@ function sanitizeStore(store) {
     country: store.country || "India",
     opening_time: store.opening_time || null,
     closing_time: store.closing_time || null,
+    delivery_distance_km: store.delivery_distance_km ?? null,
+    delivery_radius_km: store.delivery_radius_km ?? null,
   };
 }
 

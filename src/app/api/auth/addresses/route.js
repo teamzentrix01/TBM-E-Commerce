@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { ensureEcommerceSchema, query } from "@/lib/db";
 import { requireEcommerceUser } from "@/lib/ecommerceAuth";
 
 export async function GET() {
+  await ensureEcommerceSchema();
   const auth = await requireEcommerceUser();
   if (auth.error) {
     return NextResponse.json(
@@ -13,7 +14,8 @@ export async function GET() {
 
   try {
     const result = await query(
-      `SELECT id, receiver_name as name, receiver_phone as phone, address_line1 as line, city, pincode
+      `SELECT id, receiver_name as name, receiver_phone as phone, address_line1 as line,
+              city, pincode, latitude, longitude, location_accuracy_m
        FROM ecommerce_addresses
        WHERE user_id = $1
        ORDER BY created_at DESC`,
@@ -30,6 +32,7 @@ export async function GET() {
 }
 
 export async function POST(request) {
+  await ensureEcommerceSchema();
   const auth = await requireEcommerceUser();
   if (auth.error) {
     return NextResponse.json(
@@ -41,19 +44,55 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const { name, phone, line, city, pincode } = body;
+    const hasLatitude =
+      body.latitude != null && String(body.latitude).trim() !== "";
+    const hasLongitude =
+      body.longitude != null && String(body.longitude).trim() !== "";
+    const latitude = Number(body.latitude);
+    const longitude = Number(body.longitude);
+    const accuracy = Number(body.locationAccuracyM || body.location_accuracy_m || 0);
+    const hasCoordinates = hasLatitude || hasLongitude;
 
-    if (!name || !phone || !line || !city || !pincode) {
+    if (
+      !name ||
+      !phone ||
+      !line ||
+      !city ||
+      !pincode ||
+      (hasCoordinates &&
+        (!hasLatitude ||
+          !hasLongitude ||
+          !Number.isFinite(latitude) ||
+          latitude < -90 ||
+          latitude > 90 ||
+          !Number.isFinite(longitude) ||
+          longitude < -180 ||
+          longitude > 180))
+    ) {
       return NextResponse.json(
-        { success: false, message: "Missing required fields" },
+        { success: false, message: "Complete the address and verify its location" },
         { status: 400 }
       );
     }
 
     const result = await query(
-      `INSERT INTO ecommerce_addresses (user_id, receiver_name, receiver_phone, address_line1, city, pincode)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, receiver_name as name, receiver_phone as phone, address_line1 as line, city, pincode`,
-      [auth.user.id, name, phone, line, city, pincode]
+      `INSERT INTO ecommerce_addresses (
+         user_id, receiver_name, receiver_phone, address_line1, city, pincode,
+         latitude, longitude, location_accuracy_m
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, receiver_name as name, receiver_phone as phone, address_line1 as line,
+                 city, pincode, latitude, longitude, location_accuracy_m`,
+      [
+        auth.user.id,
+        name,
+        phone,
+        line,
+        city,
+        pincode,
+        hasCoordinates ? latitude : null,
+        hasCoordinates ? longitude : null,
+        hasCoordinates ? accuracy || null : null,
+      ]
     );
 
     return NextResponse.json({ success: true, data: result.rows[0] });

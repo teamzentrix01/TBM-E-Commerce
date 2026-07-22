@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { ensureEcommerceSchema, getClient } from "@/lib/db";
-import { verifyIntegrationKey } from "@/lib/ecommerceAuth";
+import {
+  deliveryOtp,
+  secureEqual,
+  verifyIntegrationKey,
+} from "@/lib/ecommerceAuth";
 import { getOrder, ORDER_TRANSITIONS } from "@/lib/ecommerceOrders";
 import { moneyToPaise } from "@/lib/paymentStore";
 import { createRazorpayRefund } from "@/lib/razorpay";
@@ -15,6 +19,125 @@ const ACTION_STATUS = {
   deliver: "delivered",
   cancel: "cancelled",
 };
+
+async function handleDeliveryAction(id, body) {
+  let client;
+  try {
+    client = await getClient();
+    await client.query("BEGIN");
+    const orderResult = await client.query(
+      `SELECT id, store_id, status, delivery_agent_id
+       FROM ecommerce_orders
+       WHERE id = $1
+       FOR UPDATE`,
+      [Number(id)],
+    );
+    const order = orderResult.rows[0];
+    if (!order) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { success: false, message: "Order not found" },
+        { status: 404 },
+      );
+    }
+    if (body.storeId && Number(body.storeId) !== Number(order.store_id)) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { success: false, message: "Order does not belong to this store" },
+        { status: 403 },
+      );
+    }
+
+    if (body.action === "assign_rider") {
+      if (
+        !["accepted", "picking", "packed", "billed"].includes(order.status)
+      ) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { success: false, message: "Rider cannot be assigned at this stage" },
+          { status: 409 },
+        );
+      }
+      const agentId = Number(body.agentId);
+      const agentUserId = Number(body.agentUserId);
+      const agentName = String(body.agentName || "").trim();
+      if (!agentId || !agentUserId || !agentName) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { success: false, message: "Valid delivery rider is required" },
+          { status: 400 },
+        );
+      }
+      await client.query(
+        `UPDATE ecommerce_orders
+         SET delivery_agent_id = $2,
+             delivery_agent_user_id = $3,
+             delivery_agent_name = $4,
+             delivery_agent_phone = $5,
+             updated_at = NOW()
+         WHERE id = $1`,
+        [
+          Number(id),
+          agentId,
+          agentUserId,
+          agentName.slice(0, 160),
+          String(body.agentPhone || "").slice(0, 30) || null,
+        ],
+      );
+    } else {
+      const latitude = Number(body.latitude);
+      const longitude = Number(body.longitude);
+      const agentId = Number(body.agentId);
+      if (
+        !agentId ||
+        agentId !== Number(order.delivery_agent_id) ||
+        order.status !== "dispatched" ||
+        !Number.isFinite(latitude) ||
+        latitude < -90 ||
+        latitude > 90 ||
+        !Number.isFinite(longitude) ||
+        longitude < -180 ||
+        longitude > 180
+      ) {
+        await client.query("ROLLBACK");
+        return NextResponse.json(
+          { success: false, message: "Invalid rider location update" },
+          { status: 403 },
+        );
+      }
+      const accuracy = Number(body.accuracy || 0) || null;
+      await client.query(
+        `UPDATE ecommerce_orders
+         SET rider_latitude = $2,
+             rider_longitude = $3,
+             rider_location_accuracy_m = $4,
+             rider_location_updated_at = NOW(),
+             updated_at = NOW()
+         WHERE id = $1`,
+        [Number(id), latitude, longitude, accuracy],
+      );
+      await client.query(
+        `INSERT INTO ecommerce_delivery_location_events
+           (order_id, delivery_agent_id, latitude, longitude, accuracy_m)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [Number(id), agentId, latitude, longitude, accuracy],
+      );
+    }
+
+    await client.query("COMMIT");
+    const updated = await getOrder(id);
+    return NextResponse.json({ success: true, data: { order: updated } });
+  } catch (error) {
+    if (client) await client.query("ROLLBACK").catch(() => {});
+    console.error("[tbm delivery action]", error);
+    return NextResponse.json(
+      { success: false, message: "Unable to update delivery" },
+      { status: 500 },
+    );
+  } finally {
+    client?.release();
+  }
+}
 
 export async function GET(request, context) {
   if (!verifyIntegrationKey(request)) {
@@ -47,6 +170,9 @@ export async function PATCH(request, context) {
     await ensureEcommerceSchema();
     const { id } = await context.params;
     const body = await request.json();
+    if (["assign_rider", "update_location"].includes(body.action)) {
+      return handleDeliveryAction(id, body);
+    }
     const nextStatus = ACTION_STATUS[body.action] || "";
     if (!nextStatus) {
       return NextResponse.json(
@@ -88,6 +214,23 @@ export async function PATCH(request, context) {
           message: `Cannot move order from ${order.status} to ${nextStatus}`,
         },
         { status: 409 },
+      );
+    }
+    if (nextStatus === "dispatched" && !order.delivery_agent_id) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { success: false, message: "Assign a rider before dispatch" },
+        { status: 409 },
+      );
+    }
+    if (
+      nextStatus === "delivered" &&
+      !secureEqual(deliveryOtp(order.id), String(body.otp || "").trim())
+    ) {
+      await client.query("ROLLBACK");
+      return NextResponse.json(
+        { success: false, message: "Invalid delivery OTP" },
+        { status: 400 },
       );
     }
     if (nextStatus === "rejected" && !String(body.reason || "").trim()) {
@@ -188,6 +331,9 @@ export async function PATCH(request, context) {
       "updated_at = NOW()",
       timestamps[nextStatus],
     ].filter(Boolean);
+    if (nextStatus === "dispatched") {
+      updateFragments.push("picked_up_at = NOW()");
+    }
     const params = [nextStatus];
     if (
       ["rejected", "cancelled"].includes(nextStatus) &&

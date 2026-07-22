@@ -14,9 +14,12 @@ export async function fetchTbmPublic(path) {
   return payload.data;
 }
 
-export async function resolveTbmStore(pincode) {
+export async function resolveTbmStore(pincode, latitude = null, longitude = null) {
+  const params = new URLSearchParams({ pincode: String(pincode || "") });
+  if (latitude != null) params.set("latitude", String(latitude));
+  if (longitude != null) params.set("longitude", String(longitude));
   const data = await fetchTbmPublic(
-    `/api/public/stores/resolve?pincode=${encodeURIComponent(pincode)}`,
+    `/api/public/stores/resolve?${params.toString()}`,
   );
   return data.store;
 }

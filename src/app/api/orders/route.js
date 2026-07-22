@@ -265,6 +265,12 @@ export async function POST(request) {
     const address = body.address || {};
     const phone = normalizePhone(address.phone);
     const pincode = String(address.pincode || "").replace(/\D/g, "");
+    const latitude = Number(address.latitude);
+    const longitude = Number(address.longitude);
+    const hasLatitude =
+      address.latitude != null && String(address.latitude).trim() !== "";
+    const hasLongitude =
+      address.longitude != null && String(address.longitude).trim() !== "";
     const paymentMethod = ["cod", "upi_on_delivery", "razorpay"].includes(
       body.paymentMethod,
     )
@@ -279,7 +285,15 @@ export async function POST(request) {
       !String(address.line || "").trim() ||
       !String(address.city || "").trim() ||
       !isValidPhone(phone) ||
-      !/^\d{6}$/.test(pincode)
+      !/^\d{6}$/.test(pincode) ||
+      !hasLatitude ||
+      !hasLongitude ||
+      !Number.isFinite(latitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      !Number.isFinite(longitude) ||
+      longitude < -180 ||
+      longitude > 180
     ) {
       return NextResponse.json(
         { success: false, message: "Complete order and address details correctly" },
@@ -302,7 +316,7 @@ export async function POST(request) {
       );
     }
 
-    const store = await resolveTbmStore(pincode);
+    const store = await resolveTbmStore(pincode, latitude, longitude);
     if (Number(store.id) !== storeId) {
       return NextResponse.json(
         { success: false, message: "Address is not served by the selected store" },
@@ -432,6 +446,12 @@ export async function POST(request) {
           city: String(address.city).trim(),
           state: String(address.state || store.state || "").trim(),
           pincode,
+          latitude,
+          longitude,
+          location_accuracy_m:
+            Number(address.locationAccuracyM || address.location_accuracy_m) || null,
+          delivery_distance_km: Number(store.delivery_distance_km),
+          delivery_radius_km: Number(store.delivery_radius_km || 5),
         }),
         String(body.note || "").trim().slice(0, 1000),
         idempotencyKey,

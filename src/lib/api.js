@@ -17,10 +17,15 @@ export function fetchStores(options) {
   return requestPublicApi("/api/public/stores", options);
 }
 
-export function resolveStoreByPincode(pincode) {
-  return requestPublicApi(
-    `/api/public/stores/resolve?pincode=${encodeURIComponent(pincode)}`,
-  );
+export function resolveStoreByPincode(pincode, coordinates = null) {
+  const params = new URLSearchParams({ pincode: String(pincode || "") });
+  if (coordinates?.latitude != null) {
+    params.set("latitude", String(coordinates.latitude));
+  }
+  if (coordinates?.longitude != null) {
+    params.set("longitude", String(coordinates.longitude));
+  }
+  return requestPublicApi(`/api/public/stores/resolve?${params.toString()}`);
 }
 
 export function fetchCategories(storeId) {

@@ -6,13 +6,14 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   CreditCard,
   Download,
   ExternalLink,
   FileText,
   History,
-  Home,
   MapPin,
   PackageCheck,
   RotateCcw,
@@ -35,6 +36,7 @@ const money = (value) =>
   }).format(Number(value || 0));
 
 const STATUS_LABELS = {
+  payment_pending: "Payment pending",
   pending_store_acceptance: "Awaiting store acceptance",
   accepted: "Accepted",
   picking: "Picking",
@@ -217,19 +219,60 @@ function receiptHtml(order) {
 </html>`;
 }
 
+function OrderItemImage({ item, className = "" }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className={`customer-order-image ${className}`.trim()}>
+      {item.image_url && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={item.image_url}
+          alt={item.name || "Order item"}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <ShoppingBag />
+      )}
+    </span>
+  );
+}
+
 export default function Orders() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
   const [actionError, setActionError] = useState("");
+  const [activeTab, setActiveTab] = useState("active");
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
 
   useEffect(() => {
     fetchCustomerOrders()
-      .then((data) => setOrders(data.orders || []))
+      .then((data) => {
+        const nextOrders = data.orders || [];
+        setOrders(nextOrders);
+        if (
+          nextOrders.length > 0 &&
+          !nextOrders.some(
+            (order) =>
+              !["delivered", "rejected", "cancelled"].includes(order.status),
+          )
+        ) {
+          setActiveTab("past");
+        }
+      })
       .catch((requestError) => setError(requestError.message))
       .finally(() => setLoading(false));
   }, []);
+
+  function toggleDetails(orderId) {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }
 
   async function cancelOrder(order) {
     if (
@@ -269,14 +312,60 @@ export default function Orders() {
     URL.revokeObjectURL(url);
   }
 
+  function viewReceipt(order) {
+    const html = receiptHtml(order);
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.target = "_blank";
+    anchor.rel = "noopener noreferrer";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+
+  const activeOrders = orders.filter(
+    (order) => !["delivered", "rejected", "cancelled"].includes(order.status),
+  );
+  const pastOrders = orders.filter((order) =>
+    ["delivered", "rejected", "cancelled"].includes(order.status),
+  );
+  const visibleOrders = activeTab === "active" ? activeOrders : pastOrders;
+
   return (
     <>
       <AppHeader />
-      <main className="route-page">
-        <div className="route-title">
-          <span>PURCHASE HISTORY</span>
-          <h1>My orders</h1>
-          <p>Track and review your recent orders.</p>
+      <main className="route-page customer-orders-page">
+        <div className="customer-orders-heading">
+          <div className="route-title">
+            <span>YOUR ORDERS</span>
+            <h1>My orders</h1>
+            <p>Track active deliveries and quickly find previous purchases.</p>
+          </div>
+          {!loading && !error && orders.length > 0 && (
+            <div className="customer-order-tabs" role="tablist" aria-label="Order type">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "active"}
+                className={activeTab === "active" ? "active" : ""}
+                onClick={() => setActiveTab("active")}
+              >
+                Active <span>{activeOrders.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === "past"}
+                className={activeTab === "past" ? "active" : ""}
+                onClick={() => setActiveTab("past")}
+              >
+                Past orders <span>{pastOrders.length}</span>
+              </button>
+            </div>
+          )}
         </div>
         {loading ? (
           <div className="route-empty">
@@ -298,11 +387,35 @@ export default function Orders() {
             <Link href="/">Start shopping</Link>
           </div>
         ) : (
-          <div className="orders-list">
-            {orders.map((order) => {
+          <div className="customer-orders-shell">
+            {actionError && (
+              <p className="order-action-error" role="alert">
+                {actionError}
+              </p>
+            )}
+            {visibleOrders.length === 0 ? (
+              <div className="customer-orders-tab-empty">
+                <PackageCheck />
+                <h2>
+                  {activeTab === "active"
+                    ? "No active orders"
+                    : "No past orders yet"}
+                </h2>
+                <p>
+                  {activeTab === "active"
+                    ? "Your next order will appear here with live status updates."
+                    : "Completed and cancelled orders will appear here."}
+                </p>
+                {activeTab === "active" && <Link href="/">Start shopping</Link>}
+              </div>
+            ) : (
+              <div className="customer-orders-list">
+                {visibleOrders.map((order) => {
+              const orderItems = Array.isArray(order.items) ? order.items : [];
               const currentStep = STATUS_STEP[order.status] ?? 0;
               const isTerminal = ["rejected", "cancelled"].includes(order.status);
               const isDelivered = order.status === "delivered";
+              const isExpanded = expandedIds.has(order.id);
               const statusHistory = Array.isArray(order.status_history)
                 ? order.status_history
                 : [];
@@ -315,61 +428,63 @@ export default function Orders() {
               const hasReceipt =
                 RECEIPT_READY_STATUSES.includes(order.status) ||
                 Boolean(order.tbm_bill_number);
-              const itemCount = order.items.reduce(
+              const itemCount = orderItems.reduce(
                 (total, item) => total + Number(item.qty || 0),
                 0,
               );
+              const address = order.delivery_address || {};
+              const StatusIcon = isTerminal ? XCircle : CheckCircle2;
 
               return (
                 <article
                   key={order.id}
-                  className={`order-card-v2 status-${order.status}`}
+                  className={`customer-order-card status-${order.status}`}
                 >
-                  <header className="order-card-header">
-                    <div className="order-identity">
-                      <span className="order-identity-icon">
-                        <PackageCheck />
-                      </span>
-                      <span>
-                        <small>Order ID</small>
-                        <b>{order.order_number}</b>
-                      </span>
-                    </div>
-                    <div className="order-header-meta">
-                      <span>
-                        <CalendarDays />
-                        <small>Placed</small>
-                        <b>
-                          {new Date(order.created_at).toLocaleDateString("en-IN")}
-                        </b>
-                      </span>
-                      <span>
-                        <ShoppingBag />
-                        <small>Items</small>
-                        <b>{itemCount}</b>
-                      </span>
-                      <span>
-                        <small>Total</small>
-                        <strong>{money(order.grand_total)}</strong>
+                  <header className="customer-order-card-head">
+                    <div>
+                      <em className={`customer-order-status status-${order.status}`}>
+                        <StatusIcon />
+                        {STATUS_LABELS[order.status] || order.status}
+                      </em>
+                      <span className="customer-order-date">
+                        <CalendarDays /> {formatDateTime(order.created_at)}
                       </span>
                     </div>
-                    <em className={`order-status status-${order.status}`}>
-                      <CheckCircle2 />
-                      {STATUS_LABELS[order.status] || order.status}
-                    </em>
+                    <div className="customer-order-number">
+                      <small>ORDER ID</small>
+                      <b>{order.order_number}</b>
+                    </div>
                   </header>
 
-                  {isTerminal ? (
-                    <div className="order-terminal-state">
-                      <XCircle />
-                      <span>
-                        <b>{STATUS_LABELS[order.status]}</b>
-                        {order.rejection_reason && (
-                          <small>{order.rejection_reason}</small>
-                        )}
-                      </span>
+                  <div className="customer-order-overview">
+                    <div className="customer-order-thumbnails" aria-hidden="true">
+                      {orderItems.slice(0, 3).map((item) => (
+                        <OrderItemImage key={item.id} item={item} />
+                      ))}
+                      {orderItems.length > 3 && (
+                        <span className="customer-order-more">+{orderItems.length - 3}</span>
+                      )}
                     </div>
-                  ) : (
+                    <div className="customer-order-copy">
+                      <h2>
+                        {orderItems[0]?.name || "Your Buyzaar Mart order"}
+                        {orderItems.length > 1 && (
+                          <small> + {orderItems.length - 1} more</small>
+                        )}
+                      </h2>
+                      <p>
+                        <Store /> {order.store_name || "The Buyzaar Mart"}
+                      </p>
+                      <span>{itemCount} {itemCount === 1 ? "item" : "items"}</span>
+                    </div>
+                    <div className="customer-order-total">
+                      <small>ORDER TOTAL</small>
+                      <strong>{money(order.grand_total)}</strong>
+                      <span>{paymentLabel(order.payment_method)}</span>
+                    </div>
+                  </div>
+
+                  {!isTerminal && !isDelivered && (
                     <div className="order-progress" aria-label="Order progress">
                       {FULFILMENT_STEPS.map((step, index) => (
                         <div
@@ -390,157 +505,37 @@ export default function Orders() {
                   )}
 
                   {isDelivered && (
-                    <section className="order-delivered-panel">
-                      <span>
-                        <CheckCircle2 />
-                      </span>
-                      <div>
-                        <small>DELIVERY COMPLETED</small>
-                        <h2>Your order has been delivered</h2>
-                        <p>
-                          Delivered on{" "}
-                          <b>
-                            {formatDateTime(
-                              deliveredEvent?.created_at || order.delivered_at,
-                            ) || "today"}
-                          </b>
-                          . Thanks for shopping with The Buyzaar Mart.
-                        </p>
-                      </div>
-                      <div className="delivered-actions">
-                        {hasReceipt && (
-                          <button
-                            type="button"
-                            onClick={() => downloadReceipt(order)}
-                          >
-                            <Download /> Download e-receipt
-                          </button>
-                        )}
-                        <Link href="/">
-                          <RotateCcw /> Reorder items
-                        </Link>
-                        <Link href="/">
-                          <Home /> Continue shopping
-                        </Link>
-                      </div>
-                    </section>
+                    <p className="customer-order-delivered-note">
+                      <CheckCircle2 /> Delivered {formatDateTime(
+                        deliveredEvent?.created_at || order.delivered_at,
+                      ) || "successfully"}
+                    </p>
+                  )}
+                  {isTerminal && order.rejection_reason && (
+                    <p className="customer-order-terminal-note">
+                      <XCircle /> {order.rejection_reason}
+                    </p>
                   )}
 
-                  <div className="order-card-content">
-                    <section className="order-product-list">
-                      <h2>Order items</h2>
-                      {order.items.map((item) => (
-                        <div className="order-product-row" key={item.id}>
-                          <div className="order-product-media">
-                            {item.image_url ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={item.image_url} alt="" />
-                            ) : (
-                              <ShoppingBag />
-                            )}
-                          </div>
-                          <span>
-                            <b>{item.name}</b>
-                            <small>{item.unit || "1 unit"}</small>
-                          </span>
-                          <span className="order-product-qty">
-                            Qty <b>{Number(item.qty)}</b>
-                          </span>
-                          <strong>
-                            {money(
-                              item.line_total ||
-                                Number(item.selling_price) * Number(item.qty),
-                            )}
-                          </strong>
-                        </div>
-                      ))}
-                    </section>
-
-                    <aside className="order-delivery-info">
-                      <h2>Delivery details</h2>
-                      <div>
-                        <MapPin />
-                        <span>
-                          <small>Deliver to</small>
-                          <b>
-                            {order.delivery_address?.line},{" "}
-                            {order.delivery_address?.city} -{" "}
-                            {order.delivery_address?.pincode}
-                          </b>
-                        </span>
-                      </div>
-                      <div>
-                        <Store />
-                        <span>
-                          <small>Store</small>
-                          <b>{order.store_name}</b>
-                        </span>
-                      </div>
-                      <div>
-                        <Truck />
-                        <span>
-                          <small>Delivery slot</small>
-                          <b>{order.delivery_slot || "Standard delivery"}</b>
-                        </span>
-                      </div>
-                      <div>
-                        <CreditCard />
-                        <span>
-                          <small>Payment</small>
-                          <b>{paymentLabel(order.payment_method)}</b>
-                        </span>
-                      </div>
-                      {hasReceipt && (
-                        <div className="order-receipt-block">
-                          <FileText />
-                          <span>
-                            <small>E-receipt</small>
-                            <b>
-                              {order.tbm_bill_number ||
-                                `Receipt for ${order.order_number}`}
-                            </b>
-                            <button
-                              type="button"
-                              onClick={() => downloadReceipt(order)}
-                            >
-                              <Download /> Download
-                            </button>
-                            {order.receipt_url && (
-                              <a
-                                href={order.receipt_url}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                <ExternalLink /> View original
-                              </a>
-                            )}
-                          </span>
-                        </div>
-                      )}
-                      {statusHistory.length > 0 && (
-                        <div className="order-history-block">
-                          <History />
-                          <span>
-                            <small>Order history</small>
-                            {statusHistory.map((item) => (
-                              <b key={item.id}>
-                                {historyLabel(item.to_status)}
-                                <em>{formatDateTime(item.created_at)}</em>
-                              </b>
-                            ))}
-                          </span>
-                        </div>
-                      )}
-                    </aside>
-                  </div>
-
-                  <footer className="order-card-footer">
-                    <span>
-                      <small>Amount payable</small>
-                      <strong>{money(order.grand_total)}</strong>
-                    </span>
+                  <div className="customer-order-actions">
+                    {!isTerminal && !isDelivered && (
+                      <Link className="primary" href={`/orders/${order.id}/track`}>
+                        <Truck /> Track order
+                      </Link>
+                    )}
+                    {hasReceipt && (
+                      <button type="button" onClick={() => downloadReceipt(order)}>
+                        <Download /> Receipt
+                      </button>
+                    )}
+                    {isDelivered && (
+                      <Link href="/">
+                        <RotateCcw /> Shop again
+                      </Link>
+                    )}
                     {canCancel && (
                       <button
+                        className="danger"
                         type="button"
                         disabled={busyId === order.id}
                         onClick={() => cancelOrder(order)}
@@ -549,11 +544,76 @@ export default function Orders() {
                         {busyId === order.id ? "Cancelling..." : "Cancel order"}
                       </button>
                     )}
-                  </footer>
+                    <button
+                      className="details-toggle"
+                      type="button"
+                      aria-expanded={isExpanded}
+                      onClick={() => toggleDetails(order.id)}
+                    >
+                      {isExpanded ? <ChevronUp /> : <ChevronDown />}
+                      {isExpanded ? "Hide details" : "View details"}
+                    </button>
+                  </div>
+
+                  {isExpanded && (
+                    <div className="customer-order-details">
+                      <section className="customer-order-products">
+                        <h3>Order items</h3>
+                        {orderItems.map((item) => (
+                          <div key={item.id}>
+                            <OrderItemImage item={item} className="detail" />
+                            <span>
+                              <b>{item.name}</b>
+                              <small>{item.unit || "1 unit"} · Qty {Number(item.qty)}</small>
+                            </span>
+                            <strong>{money(
+                              item.line_total ||
+                                Number(item.selling_price) * Number(item.qty),
+                            )}</strong>
+                          </div>
+                        ))}
+                      </section>
+
+                      <aside className="customer-order-info">
+                        <h3>Delivery details</h3>
+                        <div><MapPin /><span><small>Deliver to</small><b>{address.line}, {address.city} - {address.pincode}</b></span></div>
+                        <div><Store /><span><small>Store</small><b>{order.store_name}</b></span></div>
+                        <div><Truck /><span><small>Delivery slot</small><b>{order.delivery_slot || "Standard delivery"}</b></span></div>
+                        <div><CreditCard /><span><small>Payment</small><b>{paymentLabel(order.payment_method)}</b></span></div>
+                        {hasReceipt && (
+                          <div>
+                            <FileText />
+                            <span>
+                              <small>E-receipt</small>
+                              <b>{order.tbm_bill_number || order.order_number}</b>
+                              <button type="button" onClick={() => viewReceipt(order)}>
+                                <ExternalLink /> View e-receipt
+                              </button>
+                            </span>
+                          </div>
+                        )}
+                      </aside>
+
+                      {statusHistory.length > 0 && (
+                        <section className="customer-order-history">
+                          <h3><History /> Order history</h3>
+                          <div>
+                            {statusHistory.map((item) => (
+                              <p key={item.id}>
+                                <span><i />{historyLabel(item.to_status)}</span>
+                                <time>{formatDateTime(item.created_at)}</time>
+                              </p>
+                            ))}
+                          </div>
+                        </section>
+                      )}
+                    </div>
+                  )}
                 </article>
               );
-            })}
-            {actionError && <p className="order-action-error">{actionError}</p>}
+                })}
+              </div>
+            )}
           </div>
         )}
       </main>
