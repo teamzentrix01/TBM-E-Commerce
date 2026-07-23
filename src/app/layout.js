@@ -21,9 +21,9 @@ export const metadata = {
   description:
     "Shop live local inventory, store-wise prices, groceries and everyday essentials from The Buyzaar Mart.",
   icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
-    apple: "/favicon.png",
+    icon: "/buyzaar-logo.png",
+    shortcut: "/buyzaar-logo.png",
+    apple: "/buyzaar-logo.png",
   },
 };
 
