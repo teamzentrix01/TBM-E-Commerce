@@ -31,6 +31,7 @@ export default function ProductPage() {
     pincode,
     ready,
     selectStore,
+    storeVerified,
     toggleWishlist,
     updateCart,
     wishlist,
@@ -180,7 +181,9 @@ export default function ProductPage() {
                 <span>
                   <b>Local delivery</b>
                   <small>
-                    From {activeStore?.name || "your selected store"}
+                    {storeVerified
+                      ? `From ${activeStore?.name}`
+                      : "Nearest store verified when you add"}
                   </small>
                 </span>
               </div>

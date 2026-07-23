@@ -35,10 +35,13 @@ export async function POST(request) {
     const email = payload.email?.toLowerCase().trim();
     const name = payload.name?.trim() || "";
     const picture = payload.picture || null;
+    const expectedClientId =
+      process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
+      "220455486884-25pldq1933q4kcl72q0e8j3mrtu9216u.apps.googleusercontent.com";
 
-    if (!email) {
+    if (!email || payload.email_verified !== "true" || payload.aud !== expectedClientId) {
       return NextResponse.json(
-        { success: false, message: "Email not provided by Google account" },
+        { success: false, message: "Google account could not be verified" },
         { status: 400 }
       );
     }

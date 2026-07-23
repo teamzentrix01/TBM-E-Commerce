@@ -2016,3 +2016,122 @@ footer span {
   box-shadow: none;
   transform: none;
 }
+.flow-gate-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(7 17 35 / 72%);
+  backdrop-filter: blur(5px);
+}
+
+.flow-gate {
+  position: relative;
+  width: min(460px, 100%);
+  padding: 34px;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgb(0 0 0 / 28%);
+  text-align: center;
+}
+
+.flow-gate-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  border: 0;
+  background: transparent;
+  color: #5f6878;
+  font-size: 28px;
+  cursor: pointer;
+}
+
+.flow-gate-icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  margin: 0 auto 16px;
+  place-items: center;
+  border-radius: 50%;
+  background: #fff0f0;
+  color: #b00000;
+  font-size: 32px;
+}
+
+.flow-gate > small {
+  color: #b00000;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.flow-gate h2 {
+  margin: 8px 0 10px;
+  color: #101828;
+}
+
+.flow-gate p {
+  margin: 0;
+  color: #667085;
+  line-height: 1.55;
+}
+
+.flow-gate-status,
+.flow-gate-error {
+  margin-top: 20px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: #f4f7fb;
+  color: #344054;
+  font-weight: 700;
+}
+
+.flow-gate-error {
+  background: #fff0f0;
+  color: #9c0000;
+}
+
+.flow-gate-retry {
+  width: 100%;
+  margin-top: 12px;
+  padding: 13px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #b00000;
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.google-login-container,
+#google-signin-btn {
+  min-height: 44px;
+}
+
+#google-signin-btn {
+  display: flex;
+  justify-content: center;
+}
+
+.google-login-fallback {
+  display: flex;
+  width: min(360px, 100%);
+  min-height: 44px;
+  margin: 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.google-login-fallback svg {
+  width: 20px;
+  height: 20px;
+}

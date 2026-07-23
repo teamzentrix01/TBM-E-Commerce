@@ -225,7 +225,10 @@ export default function Checkout() {
           phone: current.phone || user?.phone || "",
         }));
       })
-      .catch(() => {});
+      .catch(() => {
+        localStorage.setItem("tbm-login-return", "/checkout");
+        window.location.replace("/account?returnTo=%2Fcheckout");
+      });
   }, []);
 
   useEffect(() => {

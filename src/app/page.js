@@ -33,7 +33,6 @@ import {
   fetchCategories,
   fetchProducts,
   fetchStorefrontFacets,
-  fetchStores,
   resolveStoreByPincode,
   searchProducts,
 } from "@/lib/api";
@@ -105,11 +104,11 @@ export default function Home() {
     removeFromCart,
     selectStore,
     setPincode,
+    storeVerified,
     toggleWishlist,
     updateCart,
     wishlist,
   } = useStore();
-  const [stores, setStores] = useState([]);
   const [categories, setCategories] = useState([]);
   const [facets, setFacets] = useState({
     brands: [],
@@ -150,10 +149,6 @@ export default function Home() {
     async function initialize() {
       setLoading(true);
       try {
-        const storeData = await fetchStores();
-        if (cancelled) return;
-        setStores(storeData.records || []);
-
         if (!activeStore) {
           const resolved = await resolveStoreByPincode(
             pincode || DEFAULT_PINCODE,
@@ -165,7 +160,6 @@ export default function Home() {
       } catch (error) {
         if (!cancelled) {
           setStatus(error.message);
-          setLocationOpen(true);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -281,9 +275,9 @@ export default function Home() {
     {
       kicker: "Fresh savings, every day",
       title: "Your neighbourhood mart, now at your doorstep.",
-      copy: activeStore
+      copy: storeVerified && activeStore
         ? `Shop live inventory and local prices from ${activeStore.name}.`
-        : "Choose a nearby store to see live prices and availability.",
+        : "Browse freely. We verify a nearby store only when you add to cart.",
       action: "Shop today's deals",
     },
     {
@@ -330,7 +324,7 @@ export default function Home() {
       notify("Maximum available stock is already in your cart");
       return;
     }
-    updateCart(product, 1);
+    if (!updateCart(product, 1)) return;
     setRecentlyAddedId(product.id);
     window.setTimeout(() => setRecentlyAddedId(null), 650);
     notify("This product has been added to your cart", product);
@@ -438,15 +432,21 @@ export default function Home() {
 
           <button
             className="location-button"
-            onClick={() => setLocationOpen(true)}
+            onClick={() =>
+              notify(
+                storeVerified
+                  ? "Your delivery location is verified"
+                  : "Your current location will be verified when you add a product",
+              )
+            }
           >
             <MapPin />
             <span>
               <small>Deliver to</small>
               <b>
-                {activeStore
+                {storeVerified && activeStore
                   ? `${activeStore.city} ${pincode || activeStore.pincode}`
-                  : "Select location"}
+                  : "Verify on add to cart"}
               </b>
             </span>
             <ChevronDown size={16} />
@@ -579,7 +579,11 @@ export default function Home() {
           ) : (
             <div className="hero-store-promise">
               <Store />
-              <b>{activeStore?.name || "Your local Buyzaar Mart"}</b>
+              <b>
+                {storeVerified
+                  ? activeStore?.name
+                  : "Your nearest Buyzaar Mart"}
+              </b>
               <span>{loading ? "Loading live inventory..." : status}</span>
             </div>
           )}
@@ -655,7 +659,7 @@ export default function Home() {
               <b>
                 {products[0].discount_percent > 0
                   ? `Save ${Math.round(products[0].discount_percent)}% on ${products[0].name}`
-                  : `Shop ${products[0].name} from ${activeStore?.name || "your store"}`}
+                  : `Shop ${products[0].name} from your nearby store`}
               </b>
               <em>
                 Shop offer <ArrowRight />
@@ -848,7 +852,9 @@ export default function Home() {
       <section className="products-section storefront-products" id="products">
         <div className="products-toolbar">
           <div>
-            <span>{activeStore?.name || "SELECT A STORE"}</span>
+            <span>
+              {storeVerified ? activeStore?.name : "BROWSE ALL PRODUCTS"}
+            </span>
             <h2>
               {search
                 ? `Results for "${search}"`
@@ -1020,77 +1026,6 @@ export default function Home() {
 
       <PageFooter />
 
-      {locationOpen && (
-        <div className="overlay modal-backdrop" onMouseDown={() => setLocationOpen(false)}>
-          <section
-            className="location-modal store-picker-modal"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <button
-              className="close-button"
-              aria-label="Close location picker"
-              onClick={() => setLocationOpen(false)}
-            >
-              <X />
-            </button>
-            <MapPin className="modal-icon" />
-            <span className="modal-kicker">LOCAL DELIVERY</span>
-            <h2>Choose your delivery location</h2>
-            <p>
-              Enter a pincode or select a store to see its live catalog,
-              prices and stock.
-            </p>
-            <form onSubmit={applyPincode}>
-              <label htmlFor="delivery-pincode">Delivery pincode</label>
-              <div>
-                <input
-                  id="delivery-pincode"
-                  autoFocus
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={draftPincode}
-                  onChange={(event) =>
-                    setDraftPincode(event.target.value.replace(/\D/g, ""))
-                  }
-                  placeholder="6 digit pincode"
-                />
-                <button disabled={loading || draftPincode.length !== 6}>
-                  {loading ? "Checking..." : "Apply"}
-                </button>
-              </div>
-            </form>
-            <div className="store-picker-list">
-              <b>Available stores</b>
-              {stores.map((store) => (
-                <button
-                  className={
-                    String(store.id) === String(activeStore?.id)
-                      ? "selected"
-                      : ""
-                  }
-                  key={store.id}
-                  onClick={() => chooseStore(store)}
-                >
-                  <Store />
-                  <span>
-                    <strong>{store.name}</strong>
-                    <small>
-                      {store.city}, {store.state} - {store.pincode}
-                    </small>
-                  </span>
-                  {String(store.id) === String(activeStore?.id) ? (
-                    <Check />
-                  ) : (
-                    <ChevronRight />
-                  )}
-                </button>
-              ))}
-            </div>
-            <small className="location-status">{status}</small>
-          </section>
-        </div>
-      )}
-
       {catalogOpen && (
         <div
           className="modal-backdrop catalog-backdrop"
@@ -1104,7 +1039,11 @@ export default function Home() {
               <div>
                 <span>EXPLORE THE STORE</span>
                 <h2>Find what you need</h2>
-                <p>{activeStore?.name}</p>
+                <p>
+                  {storeVerified
+                    ? activeStore?.name
+                    : "Location is checked only when you add to cart"}
+                </p>
               </div>
               <button
                 aria-label="Close catalog"
@@ -1309,7 +1248,11 @@ export default function Home() {
               <div className="stock-message">
                 <PackageCheck />
                 <span>
-                  <b>Available at {activeStore?.name}</b>
+                  <b>
+                    {storeVerified
+                      ? `Available at ${activeStore?.name}`
+                      : "Availability verified on add to cart"}
+                  </b>
                   <small>
                     {Math.floor(quickView.stock)} units in local stock
                   </small>
@@ -1437,9 +1380,15 @@ export default function Home() {
         <div className="delivery-note">
           <Truck />
           <span>
-            <b>{activeStore?.name || "Select a local store"}</b>
+            <b>
+              {storeVerified
+                ? activeStore?.name
+                : "Store selected after location check"}
+            </b>
             <small>
-              {activeStore?.city} {pincode}
+              {storeVerified
+                ? `${activeStore?.city || ""} ${pincode || ""}`
+                : "Within 5 km of your current location"}
             </small>
           </span>
         </div>

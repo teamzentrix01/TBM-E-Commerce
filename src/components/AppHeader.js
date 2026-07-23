@@ -17,7 +17,7 @@ import { useStore } from "@/context/StoreContext";
 export default function AppHeader({ search = "", onSearch }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { activeStore, cartCount, pincode, wishlist } = useStore();
+  const { activeStore, cartCount, pincode, storeVerified, wishlist } = useStore();
   const [query, setQuery] = useState(search);
 
   useEffect(() => setQuery(search), [search]);
@@ -62,9 +62,9 @@ export default function AppHeader({ search = "", onSearch }) {
             <span>
               <small>Delivering to</small>
               <b>
-                {activeStore
+                {storeVerified && activeStore
                   ? `${activeStore.city} ${pincode || activeStore.pincode}`
-                  : "Select location"}
+                  : "Verify on add to cart"}
               </b>
             </span>
           </Link>
