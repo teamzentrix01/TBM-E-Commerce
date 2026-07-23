@@ -20,11 +20,6 @@ export const metadata = {
   },
   description:
     "Shop live local inventory, store-wise prices, groceries and everyday essentials from The Buyzaar Mart.",
-  icons: {
-    icon: "/buyzaar-logo.png",
-    shortcut: "/buyzaar-logo.png",
-    apple: "/buyzaar-logo.png",
-  },
 };
 
 export default function RootLayout({ children }) {
