@@ -17,7 +17,11 @@ export function fetchStores(options) {
   return requestPublicApi("/api/public/stores", options);
 }
 
-export function resolveStoreByPincode(pincode, coordinates = null) {
+export async function resolveStoreByPincode(
+  pincode,
+  coordinates = null,
+  options = {},
+) {
   const params = new URLSearchParams({ pincode: String(pincode || "") });
   if (coordinates?.latitude != null) {
     params.set("latitude", String(coordinates.latitude));
@@ -25,7 +29,18 @@ export function resolveStoreByPincode(pincode, coordinates = null) {
   if (coordinates?.longitude != null) {
     params.set("longitude", String(coordinates.longitude));
   }
-  return requestPublicApi(`/api/public/stores/resolve?${params.toString()}`);
+  try {
+    return await requestPublicApi(
+      `/api/public/stores/resolve?${params.toString()}`,
+    );
+  } catch (error) {
+    if (coordinates && options.allowPincodeFallback && pincode) {
+      return requestPublicApi(
+        `/api/public/stores/resolve?pincode=${encodeURIComponent(pincode)}`,
+      );
+    }
+    throw error;
+  }
 }
 
 export function fetchCategories(storeId) {

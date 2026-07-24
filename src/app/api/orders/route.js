@@ -317,6 +317,23 @@ export async function POST(request) {
     }
 
     const store = await resolveTbmStore(pincode, latitude, longitude);
+    const deliveryDistanceKm = Number(store.delivery_distance_km);
+    const deliveryRadiusKm = Math.min(
+      Number(store.delivery_radius_km || 5),
+      5,
+    );
+    if (
+      Number.isFinite(deliveryDistanceKm) &&
+      deliveryDistanceKm > deliveryRadiusKm
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Delivery address is outside the 5 km service area",
+        },
+        { status: 409 },
+      );
+    }
     if (Number(store.id) !== storeId) {
       return NextResponse.json(
         { success: false, message: "Address is not served by the selected store" },
@@ -450,8 +467,10 @@ export async function POST(request) {
           longitude,
           location_accuracy_m:
             Number(address.locationAccuracyM || address.location_accuracy_m) || null,
-          delivery_distance_km: Number(store.delivery_distance_km),
-          delivery_radius_km: Number(store.delivery_radius_km || 5),
+          delivery_distance_km: Number.isFinite(deliveryDistanceKm)
+            ? deliveryDistanceKm
+            : null,
+          delivery_radius_km: deliveryRadiusKm,
         }),
         String(body.note || "").trim().slice(0, 1000),
         idempotencyKey,

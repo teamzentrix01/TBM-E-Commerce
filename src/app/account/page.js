@@ -22,7 +22,6 @@ import {
 import AppHeader, { PageFooter } from "@/components/AppHeader";
 import { useStore } from "@/context/StoreContext";
 import {
-  getCurrentCustomer,
   loginWithGoogle,
   logoutCustomer,
   sendLoginOtp,
@@ -34,8 +33,6 @@ import {
 } from "@/lib/ecommerceApi";
 
 export default function Account() {
-  const [loading, setLoading] = useState(true);
-  const [loggedIn, setLoggedIn] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -45,7 +42,15 @@ export default function Account() {
   const [profile, setProfile] = useState({ name: "", email: "", image_url: "" });
   const [googleInitialized, setGoogleInitialized] = useState(false);
   const [googleButtonReady, setGoogleButtonReady] = useState(false);
-  const { addresses, setAddresses } = useStore();
+  const {
+    addresses,
+    authReady,
+    customer,
+    setAddresses,
+    setCustomer,
+  } = useStore();
+  const loading = !authReady;
+  const loggedIn = Boolean(customer);
   const [addressManagerOpen, setAddressManagerOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
@@ -120,19 +125,15 @@ export default function Account() {
   }
 
   useEffect(() => {
-    getCurrentCustomer()
-      .then(({ user }) => {
-        setPhone(user.phone || "");
+    if (customer) {
+        setPhone(customer.phone || "");
         setProfile({
-          name: user.name || "",
-          email: user.email || "",
-          image_url: user.image_url || "",
+          name: customer.name || "",
+          email: customer.email || "",
+          image_url: customer.image_url || "",
         });
-        setLoggedIn(true);
-      })
-      .catch(() => setLoggedIn(false))
-      .finally(() => setLoading(false));
-  }, []);
+    }
+  }, [customer]);
 
   useEffect(() => {
     if (loggedIn) {
@@ -190,7 +191,7 @@ export default function Account() {
       params.get("returnTo") ||
       localStorage.getItem("tbm-login-return");
     localStorage.removeItem("tbm-login-return");
-    if (returnTo?.startsWith("/")) {
+    if (returnTo?.startsWith("/") && !returnTo.startsWith("//")) {
       window.location.replace(returnTo);
     }
   }
@@ -206,7 +207,7 @@ export default function Account() {
         image_url: result.user.image_url || "",
       });
       setPhone(result.user.phone || "");
-      setLoggedIn(true);
+      setCustomer(result.user);
       continueAfterLogin();
     } catch (requestError) {
       setError(requestError.message || "Google login failed");
@@ -231,7 +232,7 @@ export default function Account() {
           email: result.user.email || "",
           image_url: result.user.image_url || "",
         });
-        setLoggedIn(true);
+        setCustomer(result.user);
         continueAfterLogin();
       }
     } catch (requestError) {
@@ -256,6 +257,7 @@ export default function Account() {
         image_url: result.user.image_url || "",
       });
       setPhone(result.user.phone || "");
+      setCustomer(result.user);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (requestError) {
@@ -267,7 +269,7 @@ export default function Account() {
 
   async function logout() {
     await logoutCustomer().catch(() => {});
-    setLoggedIn(false);
+    setCustomer(null);
     setOtp("");
     setOtpSent(false);
     setAddresses([]);

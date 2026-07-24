@@ -18,9 +18,17 @@ export async function resolveTbmStore(pincode, latitude = null, longitude = null
   const params = new URLSearchParams({ pincode: String(pincode || "") });
   if (latitude != null) params.set("latitude", String(latitude));
   if (longitude != null) params.set("longitude", String(longitude));
-  const data = await fetchTbmPublic(
-    `/api/public/stores/resolve?${params.toString()}`,
-  );
+  let data;
+  try {
+    data = await fetchTbmPublic(
+      `/api/public/stores/resolve?${params.toString()}`,
+    );
+  } catch (error) {
+    if (latitude == null || longitude == null || !pincode) throw error;
+    data = await fetchTbmPublic(
+      `/api/public/stores/resolve?pincode=${encodeURIComponent(pincode)}`,
+    );
+  }
   return data.store;
 }
 

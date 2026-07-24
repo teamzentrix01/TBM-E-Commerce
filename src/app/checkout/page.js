@@ -20,7 +20,6 @@ import { useStore } from "@/context/StoreContext";
 import { fetchProducts, resolveStoreByPincode } from "@/lib/api";
 import {
   cancelCustomerOrder,
-  getCurrentCustomer,
   submitOrder,
   verifyRazorpayPayment,
   fetchCustomerAddresses,
@@ -98,10 +97,12 @@ export default function Checkout() {
   const {
     activeStore,
     addresses,
+    authReady,
     cart,
     cartCount,
     cartSavings,
     cartTotal,
+    customer,
     pincode,
     setAddresses,
     setCart,
@@ -165,7 +166,9 @@ export default function Checkout() {
   }
 
   async function verifyServiceability(candidate) {
-    const data = await resolveStoreByPincode(candidate.pincode, candidate);
+    const data = await resolveStoreByPincode(candidate.pincode, candidate, {
+      allowPincodeFallback: true,
+    });
     if (activeStore && String(data.store.id) !== String(activeStore.id)) {
       throw new Error(
         `Your cart belongs to ${activeStore.name}. Use a location within its delivery area, or change your store and rebuild the cart.`,
@@ -217,21 +220,21 @@ export default function Checkout() {
   }, [pincode]);
 
   useEffect(() => {
-    getCurrentCustomer()
-      .then(({ user }) => {
-        setAddress((current) => ({
-          ...current,
-          name: current.name || user?.name || "",
-          phone: current.phone || user?.phone || "",
-        }));
-      })
-      .catch(() => {
-        localStorage.setItem("tbm-login-return", "/checkout");
-        window.location.replace("/account?returnTo=%2Fcheckout");
-      });
-  }, []);
+    if (!authReady) return;
+    if (!customer) {
+      localStorage.setItem("tbm-login-return", "/checkout");
+      window.location.replace("/account?returnTo=%2Fcheckout");
+      return;
+    }
+    setAddress((current) => ({
+      ...current,
+      name: current.name || customer.name || "",
+      phone: current.phone || customer.phone || "",
+    }));
+  }, [authReady, customer]);
 
   useEffect(() => {
+    if (!customer) return;
     fetchCustomerAddresses()
       .then((data) => {
         setAddresses(data || []);
@@ -239,7 +242,7 @@ export default function Checkout() {
       .catch(() => {
         // Keeps local storage fallback
       });
-  }, []);
+  }, [customer, setAddresses]);
 
   useEffect(() => {
     if (!activeStore?.id) return;

@@ -12,6 +12,7 @@ import { fetchProduct, resolveStoreByPincode } from "@/lib/api";
 import { getCurrentCustomer } from "@/lib/ecommerceApi";
 
 const StoreContext = createContext(null);
+const FULFILLMENT_TTL_MS = 2 * 60 * 60 * 1000;
 
 function readStorage(key, fallback) {
   try {
@@ -34,6 +35,8 @@ export function StoreProvider({ children }) {
   const [activeStore, setActiveStore] = useState(null);
   const [storeVerified, setStoreVerified] = useState(false);
   const [pincode, setPincode] = useState("");
+  const [customer, setCustomer] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [ready, setReady] = useState(false);
   const [locationGate, setLocationGate] = useState(null);
 
@@ -42,11 +45,40 @@ export function StoreProvider({ children }) {
     setWishlist(readStorage("tbm-wishlist", []));
     setAddresses(readStorage("tbm-addresses", []));
     setOrders(readStorage("tbm-orders", []));
-    setActiveStore(readStorage("tbm-active-store", null));
-    setStoreVerified(sessionStorage.getItem("tbm-store-verified") === "true");
-    setPincode(localStorage.getItem("tbm-pincode") || "");
+    const fulfillment = readStorage("tbm-fulfillment-context", null);
+    const fulfillmentValid =
+      fulfillment?.store &&
+      Number(fulfillment.expiresAt || 0) > Date.now();
+    setActiveStore(
+      fulfillmentValid
+        ? fulfillment.store
+        : readStorage("tbm-active-store", null),
+    );
+    setStoreVerified(Boolean(fulfillmentValid));
+    setPincode(
+      (fulfillmentValid && fulfillment.pincode) ||
+        localStorage.getItem("tbm-pincode") ||
+        "",
+    );
     setReady(true);
   }, []);
+
+  const refreshCustomer = useCallback(async () => {
+    try {
+      const data = await getCurrentCustomer();
+      setCustomer(data.user || null);
+      return data.user || null;
+    } catch {
+      setCustomer(null);
+      return null;
+    } finally {
+      setAuthReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCustomer();
+  }, [refreshCustomer]);
 
   useEffect(() => {
     if (ready) localStorage.setItem("tbm-cart", JSON.stringify(cart));
@@ -72,9 +104,28 @@ export function StoreProvider({ children }) {
   }, [activeStore, ready]);
   useEffect(() => {
     if (!ready) return;
-    if (storeVerified) sessionStorage.setItem("tbm-store-verified", "true");
-    else sessionStorage.removeItem("tbm-store-verified");
-  }, [ready, storeVerified]);
+    if (storeVerified && activeStore) {
+      localStorage.setItem(
+        "tbm-fulfillment-context",
+        JSON.stringify({
+          store: activeStore,
+          pincode,
+          verifiedAt: Date.now(),
+          expiresAt: Date.now() + FULFILLMENT_TTL_MS,
+        }),
+      );
+    } else {
+      localStorage.removeItem("tbm-fulfillment-context");
+    }
+  }, [activeStore, pincode, ready, storeVerified]);
+  useEffect(() => {
+    if (!storeVerified) return;
+    const timer = window.setTimeout(
+      () => setStoreVerified(false),
+      FULFILLMENT_TTL_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [storeVerified]);
   useEffect(() => {
     if (ready && pincode) localStorage.setItem("tbm-pincode", pincode);
   }, [pincode, ready]);
@@ -148,6 +199,7 @@ export function StoreProvider({ children }) {
         product,
         status: "Getting your current location...",
         error: "",
+        draftPincode: pincode || activeStore?.pincode || "",
       });
       try {
         if (!navigator.geolocation) {
@@ -189,26 +241,67 @@ export function StoreProvider({ children }) {
           );
         }
         const store = resolved.store;
-        const productData = await fetchProduct(product.id, store.id);
-        const storeProduct = productData.product || productData;
+        const productsToCheck = [
+          ...cart,
+          ...(cart.some((item) => sameProduct(item.id, product.id))
+            ? []
+            : [product]),
+        ];
+        const refreshed = await Promise.all(
+          productsToCheck.map(async (item) => {
+            try {
+              const data = await fetchProduct(item.id, store.id);
+              return { previous: item, product: data.product || data };
+            } catch {
+              return { previous: item, product: null };
+            }
+          }),
+        );
+        const requested = refreshed.find(({ previous }) =>
+          sameProduct(previous.id, product.id),
+        );
+        const storeProduct = requested?.product;
         if (!storeProduct || Number(storeProduct.stock || 0) < 1) {
           throw new Error(
             `${product.name} is not available at your nearest store.`,
           );
         }
+        const unavailable = [];
+        const nextCart = refreshed.flatMap(({ previous, product: latest }) => {
+          const stock = Math.floor(Number(latest?.stock || 0));
+          if (!latest || stock < 1) {
+            unavailable.push(previous.name);
+            return [];
+          }
+          const requestedItem = sameProduct(previous.id, product.id);
+          const currentQty = cart.find((item) =>
+            sameProduct(item.id, previous.id),
+          )?.qty || 0;
+          return [{
+            ...previous,
+            ...latest,
+            store_id: store.id,
+            qty: Math.min(
+              currentQty + (requestedItem ? 1 : 0),
+              stock,
+            ),
+          }];
+        });
         selectStore(store, store.pincode || pincode, true);
-        commitCartUpdate(
-          { ...storeProduct, store_id: store.id },
-          1,
-          store,
+        setCart(nextCart);
+        setLocationGate(
+          unavailable.length
+            ? {
+                product,
+                status: "",
+                error: "",
+                message: `${product.name} was added. ${unavailable.length} unavailable ${
+                  unavailable.length === 1 ? "item was" : "items were"
+                } removed after checking your nearby store.`,
+                completed: true,
+              }
+            : null,
         );
-        setLocationGate(null);
-        try {
-          await getCurrentCustomer();
-        } catch {
-          localStorage.setItem("tbm-login-return", "/checkout");
-          window.location.assign("/account?returnTo=%2Fcheckout");
-        }
       } catch (error) {
         setLocationGate((current) => ({
           ...current,
@@ -217,8 +310,92 @@ export function StoreProvider({ children }) {
         }));
       }
     },
-    [activeStore, commitCartUpdate, pincode, selectStore],
+    [activeStore, cart, pincode, selectStore],
   );
+
+  const verifyPincodeAndAdd = useCallback(async () => {
+    const product = locationGate?.product;
+    const deliveryPincode = String(locationGate?.draftPincode || "")
+      .replace(/\D/g, "")
+      .slice(0, 6);
+    if (!product || deliveryPincode.length !== 6) return;
+    setLocationGate((current) => ({
+      ...current,
+      status: "Checking delivery availability...",
+      error: "",
+    }));
+    try {
+      const resolved = await resolveStoreByPincode(deliveryPincode);
+      const store = resolved.store;
+      if (!store) throw new Error("This pincode is not serviceable.");
+      const productsToCheck = [
+        ...cart,
+        ...(cart.some((item) => sameProduct(item.id, product.id))
+          ? []
+          : [product]),
+      ];
+      const refreshed = await Promise.all(
+        productsToCheck.map(async (item) => {
+          try {
+            const data = await fetchProduct(item.id, store.id);
+            return { previous: item, product: data.product || data };
+          } catch {
+            return { previous: item, product: null };
+          }
+        }),
+      );
+      const requested = refreshed.find(({ previous }) =>
+        sameProduct(previous.id, product.id),
+      );
+      const storeProduct = requested?.product;
+      if (!storeProduct || Number(storeProduct.stock || 0) < 1) {
+        throw new Error(
+          `${product.name} is not available at your nearest store.`,
+        );
+      }
+      const unavailable = [];
+      const nextCart = refreshed.flatMap(({ previous, product: latest }) => {
+        const stock = Math.floor(Number(latest?.stock || 0));
+        if (!latest || stock < 1) {
+          unavailable.push(previous.name);
+          return [];
+        }
+        const currentQty = cart.find((item) =>
+          sameProduct(item.id, previous.id),
+        )?.qty || 0;
+        return [{
+          ...previous,
+          ...latest,
+          store_id: store.id,
+          qty: Math.min(
+            currentQty + (sameProduct(previous.id, product.id) ? 1 : 0),
+            stock,
+          ),
+        }];
+      });
+      selectStore(store, deliveryPincode, true);
+      setCart(nextCart);
+      setLocationGate(
+        unavailable.length
+          ? {
+              product,
+              status: "",
+              error: "",
+              message: `${product.name} was added. ${unavailable.length} unavailable ${
+                unavailable.length === 1 ? "item was" : "items were"
+              } removed after checking this delivery area.`,
+              completed: true,
+            }
+          : null,
+      );
+    } catch (error) {
+      setLocationGate((current) => ({
+        ...current,
+        status: "",
+        error: error.message || "This pincode is not serviceable.",
+      }));
+    }
+  }, [cart, locationGate, selectStore]);
 
   const updateCart = useCallback(
     (product, amount) => {
@@ -262,19 +439,23 @@ export function StoreProvider({ children }) {
     return {
       activeStore,
       addresses,
+      authReady,
       cart,
       cartCount,
       cartMrpTotal,
       cartSavings: Math.max(cartMrpTotal - cartTotal, 0),
       cartTotal,
+      customer,
       orders,
       pincode,
       ready,
+      refreshCustomer,
       removeFromCart,
       selectStore,
       setStoreVerified,
       setAddresses,
       setCart,
+      setCustomer,
       setOrders,
       setPincode,
       toggleWishlist,
@@ -285,11 +466,14 @@ export function StoreProvider({ children }) {
   }, [
     activeStore,
     addresses,
+    authReady,
     cart,
+    customer,
     orders,
     pincode,
     ready,
     removeFromCart,
+    refreshCustomer,
     selectStore,
     storeVerified,
     toggleWishlist,
@@ -333,6 +517,47 @@ export function StoreProvider({ children }) {
                   onClick={() => verifyLocationAndAdd(locationGate.product)}
                 >
                   Try current location again
+                </button>
+              </>
+            )}
+            {!locationGate.completed && <div className="flow-gate-manual">
+              <span>or enter your delivery pincode</span>
+              <div>
+                <input
+                  aria-label="Delivery pincode"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="6 digit pincode"
+                  value={locationGate.draftPincode || ""}
+                  onChange={(event) =>
+                    setLocationGate((current) => ({
+                      ...current,
+                      draftPincode: event.target.value.replace(/\D/g, ""),
+                    }))
+                  }
+                />
+                <button
+                  disabled={
+                    String(locationGate.draftPincode || "").length !== 6
+                  }
+                  onClick={verifyPincodeAndAdd}
+                >
+                  Check
+                </button>
+              </div>
+              <small>
+                Exact 5 km serviceability is checked again with your delivery
+                address at checkout.
+              </small>
+            </div>}
+            {locationGate.completed && (
+              <>
+                <div className="flow-gate-status">{locationGate.message}</div>
+                <button
+                  className="flow-gate-retry"
+                  onClick={() => setLocationGate(null)}
+                >
+                  Continue shopping
                 </button>
               </>
             )}

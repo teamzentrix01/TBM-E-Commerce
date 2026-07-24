@@ -99,6 +99,7 @@ export default function Home() {
     cartCount,
     cartSavings,
     cartTotal,
+    customer,
     pincode,
     ready,
     removeFromCart,
@@ -474,7 +475,7 @@ export default function Home() {
             </Link>
             <Link href="/account">
               <UserRound />
-              <span>Account</span>
+              <span>{customer?.name?.split(" ")[0] || "Account"}</span>
             </Link>
             <Link href="/wishlist">
               <Heart />

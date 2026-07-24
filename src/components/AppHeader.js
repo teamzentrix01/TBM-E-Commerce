@@ -17,7 +17,14 @@ import { useStore } from "@/context/StoreContext";
 export default function AppHeader({ search = "", onSearch }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { activeStore, cartCount, pincode, storeVerified, wishlist } = useStore();
+  const {
+    activeStore,
+    cartCount,
+    customer,
+    pincode,
+    storeVerified,
+    wishlist,
+  } = useStore();
   const [query, setQuery] = useState(search);
 
   useEffect(() => setQuery(search), [search]);
@@ -100,7 +107,7 @@ export default function AppHeader({ search = "", onSearch }) {
               href="/account"
             >
               <UserRound />
-              <span>Account</span>
+              <span>{customer?.name?.split(" ")[0] || "Account"}</span>
             </Link>
             <Link
               className={pathname === "/wishlist" ? "active" : ""}
