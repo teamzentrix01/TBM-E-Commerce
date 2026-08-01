@@ -2226,6 +2226,31 @@ footer span {
 .whatsapp-share-button { background: #1fa855; color: #fff; }
 .copy-share-button { background: #f2f4f7; color: #101828; }
 .share-cart-modal > small { display: block; margin-top: 12px; color: #667085; }
+.checkout-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.checkout-top-actions > a,
+.checkout-top-actions > button {
+  display: inline-flex;
+  padding: 10px 12px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #344054;
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+.checkout-top-actions > button {
+  border: 1px solid #d5a000;
+  background: #fff9db;
+  color: #7a5900;
+}
+.checkout-top-actions svg { width: 17px; }
 
 .shared-cart-state,
 .shared-cart-join-shell {

@@ -11,9 +11,11 @@ import {
   MapPin,
   Minus,
   Plus,
+  Share2,
   ShoppingBag,
   Smartphone,
   Truck,
+  X,
 } from "lucide-react";
 import AppHeader, { PageFooter } from "@/components/AppHeader";
 import { useStore } from "@/context/StoreContext";
@@ -25,6 +27,11 @@ import {
   fetchCustomerAddresses,
   saveCustomerAddress,
 } from "@/lib/ecommerceApi";
+import {
+  createSharedCart,
+  fetchSharedCart,
+  updateSharedCartItem,
+} from "@/lib/sharedCartApi";
 
 const DELIVERY_FEE = 39;
 const FREE_DELIVERY_MINIMUM = 499;
@@ -119,6 +126,10 @@ export default function Checkout() {
   const [addressChecking, setAddressChecking] = useState(false);
   const [locationStatus, setLocationStatus] = useState("");
   const [recommendations, setRecommendations] = useState([]);
+  const [sharedSession, setSharedSession] = useState(null);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState("");
   const [address, setAddress] = useState({
     name: "",
     phone: "",
@@ -129,6 +140,98 @@ export default function Checkout() {
     longitude: null,
     locationAccuracyM: null,
   });
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem("tbm-shared-cart-owner") || "null",
+      );
+      if (saved) setSharedSession(saved);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (!sharedSession?.inviteToken || step !== 1) return;
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const data = await fetchSharedCart(sharedSession.inviteToken);
+        if (!cancelled) {
+          setCart(
+            data.cart.items.map((item) => ({
+              ...item,
+              store_id: data.cart.storeId,
+            })),
+          );
+        }
+      } catch (requestError) {
+        if ([404, 410].includes(requestError.status)) {
+          localStorage.removeItem("tbm-shared-cart-owner");
+          if (!cancelled) setSharedSession(null);
+        }
+      }
+    };
+    sync();
+    const timer = window.setInterval(sync, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [setCart, sharedSession?.inviteToken, step]);
+
+  async function applyCartUpdate(product, amount) {
+    if (sharedSession?.inviteToken && sharedSession?.memberToken) {
+      try {
+        const data = await updateSharedCartItem(
+          sharedSession.inviteToken,
+          sharedSession.memberToken,
+          product.id,
+          amount,
+        );
+        setCart(
+          data.cart.items.map((item) => ({
+            ...item,
+            store_id: data.cart.storeId,
+          })),
+        );
+      } catch (requestError) {
+        setError(requestError.message);
+      }
+      return;
+    }
+    updateCart(product, amount);
+  }
+
+  async function inviteFriends() {
+    if (sharedSession?.inviteToken) {
+      setShareError("");
+      setShareOpen(true);
+      return;
+    }
+    setShareBusy(true);
+    setShareError("");
+    try {
+      const data = await createSharedCart({
+        storeId: activeStore.id,
+        areaLabel: `${activeStore.city || ""} ${pincode || ""}`.trim(),
+        pincode: pincode || activeStore.pincode,
+        items: cart.map((item) => ({ id: item.id, qty: item.qty })),
+      });
+      const session = {
+        inviteToken: data.inviteToken,
+        memberToken: data.memberToken,
+        expiresAt: data.cart.expiresAt,
+      };
+      localStorage.setItem("tbm-shared-cart-owner", JSON.stringify(session));
+      setSharedSession(session);
+      setShareOpen(true);
+    } catch (requestError) {
+      setShareError(requestError.message);
+      setShareOpen(true);
+    } finally {
+      setShareBusy(false);
+    }
+  }
 
   function getCurrentCoordinates() {
     return new Promise((resolve, reject) => {
@@ -413,9 +516,17 @@ export default function Checkout() {
           <p>{cartCount} {cartCount === 1 ? "item" : "items"} ready for checkout</p>
         </div>
         <div className="checkout-top">
-          <Link href="/">
-            <ChevronLeft /> Continue shopping
-          </Link>
+          <div className="checkout-top-actions">
+            <Link href="/">
+              <ChevronLeft /> Continue shopping
+            </Link>
+            {step === 1 && (
+              <button disabled={shareBusy} onClick={inviteFriends}>
+                <Share2 />
+                {sharedSession ? "Share cart" : "Invite friends"}
+              </button>
+            )}
+          </div>
           <div>
             {["Cart", "Address", "Delivery & payment"].map(
               (label, index) => (
@@ -488,7 +599,7 @@ export default function Checkout() {
                           )}
                         </div>
                         <div className="qty-control">
-                          <button onClick={() => updateCart(item, -1)}>
+                          <button onClick={() => applyCartUpdate(item, -1)}>
                             <Minus />
                           </button>
                           <b>{item.qty}</b>
@@ -496,7 +607,7 @@ export default function Checkout() {
                             disabled={
                               item.qty >= Math.floor(Number(item.stock))
                             }
-                            onClick={() => updateCart(item, 1)}
+                            onClick={() => applyCartUpdate(item, 1)}
                           >
                             <Plus />
                           </button>
@@ -823,7 +934,7 @@ export default function Checkout() {
                           </div>
                           <button
                             className="add-button"
-                            onClick={() => updateCart(product, 1)}
+                            onClick={() => applyCartUpdate(product, 1)}
                           >
                             <Plus /> Add
                           </button>
@@ -836,6 +947,60 @@ export default function Checkout() {
           )}
         </div>
       </main>
+      {shareOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setShareOpen(false)}>
+          <section
+            className="share-cart-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              className="close-button"
+              aria-label="Close invite"
+              onClick={() => setShareOpen(false)}
+            >
+              <X />
+            </button>
+            <Share2 />
+            <span>GROUP CART</span>
+            <h2>Invite friends to this basket</h2>
+            <p>
+              Friends can add items using your delivery store. Checkout and
+              payment remain under your account.
+            </p>
+            {shareError ? (
+              <div className="form-error">{shareError}</div>
+            ) : sharedSession?.inviteToken ? (
+              <>
+                <a
+                  className="whatsapp-share-button"
+                  href={`https://wa.me/?text=${encodeURIComponent(
+                    `Join my Buyzaar Mart cart and add what you need: ${window.location.origin}/cart/join/${sharedSession.inviteToken}`,
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Share on WhatsApp
+                </a>
+                <button
+                  className="copy-share-button"
+                  onClick={() =>
+                    navigator.clipboard.writeText(
+                      `${window.location.origin}/cart/join/${sharedSession.inviteToken}`,
+                    )
+                  }
+                >
+                  Copy invite link
+                </button>
+                <small>Invite expires in 6 hours.</small>
+              </>
+            ) : (
+              <button className="whatsapp-share-button" onClick={inviteFriends}>
+                {shareBusy ? "Creating invite..." : "Create invite link"}
+              </button>
+            )}
+          </section>
+        </div>
+      )}
       <PageFooter />
     </>
   );
