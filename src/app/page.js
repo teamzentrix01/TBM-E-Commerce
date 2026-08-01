@@ -18,6 +18,7 @@ import {
   PackageCheck,
   Plus,
   Search,
+  Share2,
   ShieldCheck,
   ShoppingBag,
   ShoppingCart,
@@ -38,10 +39,23 @@ import {
 } from "@/lib/api";
 import { useStore } from "@/context/StoreContext";
 import { PageFooter } from "@/components/AppHeader";
+import {
+  createSharedCart,
+  fetchSharedCart,
+  updateSharedCartItem,
+} from "@/lib/sharedCartApi";
 
 const DEFAULT_PINCODE = "201304";
 const DELIVERY_FEE = 39;
 const FREE_DELIVERY_MINIMUM = 499;
+
+function readSharedSession() {
+  try {
+    return JSON.parse(localStorage.getItem("tbm-shared-cart-owner")) || null;
+  } catch {
+    return null;
+  }
+}
 
 function money(value) {
   return new Intl.NumberFormat("en-IN", {
@@ -104,6 +118,7 @@ export default function Home() {
     ready,
     removeFromCart,
     selectStore,
+    setCart,
     setPincode,
     storeVerified,
     toggleWishlist,
@@ -138,7 +153,45 @@ export default function Home() {
   const [toast, setToast] = useState(null);
   const [recentlyAddedId, setRecentlyAddedId] = useState(null);
   const [draftPincode, setDraftPincode] = useState(DEFAULT_PINCODE);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const [sharedSession, setSharedSession] = useState(null);
   const toastTimer = useRef(null);
+
+  useEffect(() => {
+    const saved = readSharedSession();
+    if (saved) setSharedSession(saved);
+  }, []);
+
+  useEffect(() => {
+    if (!sharedSession?.inviteToken) return;
+    let cancelled = false;
+    const sync = async () => {
+      try {
+        const data = await fetchSharedCart(sharedSession.inviteToken);
+        if (!cancelled) {
+          setCart(
+            data.cart.items.map((item) => ({
+              ...item,
+              store_id: data.cart.storeId,
+            })),
+          );
+        }
+      } catch (error) {
+        if (error.status === 410 || error.status === 404) {
+          localStorage.removeItem("tbm-shared-cart-owner");
+          if (!cancelled) setSharedSession(null);
+        }
+      }
+    };
+    sync();
+    const timer = window.setInterval(sync, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [setCart, sharedSession?.inviteToken]);
 
   useEffect(() => {
     if (!ready) return;
@@ -312,6 +365,9 @@ export default function Home() {
     FREE_DELIVERY_MINIMUM - cartTotal,
     0,
   );
+  const sharedInviteUrl = sharedSession?.inviteToken
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/cart/join/${sharedSession.inviteToken}`
+    : "";
 
   function notify(message, product = null) {
     setToast({ message, product });
@@ -319,16 +375,89 @@ export default function Home() {
     toastTimer.current = window.setTimeout(() => setToast(null), 3200);
   }
 
-  function addProduct(product) {
+  async function applyCartUpdate(product, amount) {
+    if (sharedSession?.inviteToken && sharedSession?.memberToken) {
+      try {
+        const data = await updateSharedCartItem(
+          sharedSession.inviteToken,
+          sharedSession.memberToken,
+          product.id,
+          amount,
+        );
+        setCart(
+          data.cart.items.map((item) => ({
+            ...item,
+            store_id: data.cart.storeId,
+          })),
+        );
+        return true;
+      } catch (error) {
+        notify(error.message);
+        return false;
+      }
+    }
+    return updateCart(product, amount);
+  }
+
+  async function removeCartItem(product) {
+    if (sharedSession?.inviteToken) {
+      await applyCartUpdate(product, -Math.max(1, Number(product.qty || 1)));
+      return;
+    }
+    removeFromCart(product.id);
+  }
+
+  async function addProduct(product) {
     const currentQuantity = quantityFor(product.id);
     if (currentQuantity >= Math.floor(Number(product.stock || 0))) {
       notify("Maximum available stock is already in your cart");
       return;
     }
-    if (!updateCart(product, 1)) return;
+    if (!(await applyCartUpdate(product, 1))) return;
     setRecentlyAddedId(product.id);
     window.setTimeout(() => setRecentlyAddedId(null), 650);
     notify("This product has been added to your cart", product);
+  }
+
+  async function inviteFriends() {
+    if (sharedSession?.inviteToken) {
+      setShareError("");
+      setShareOpen(true);
+      return;
+    }
+    if (!customer) {
+      localStorage.setItem("tbm-login-return", "/");
+      window.location.assign("/account?returnTo=%2F");
+      return;
+    }
+    if (!storeVerified || !activeStore?.id) {
+      setShareError("Add a product and verify the delivery area first.");
+      setShareOpen(true);
+      return;
+    }
+    setShareBusy(true);
+    setShareError("");
+    try {
+      const data = await createSharedCart({
+        storeId: activeStore.id,
+        areaLabel: `${activeStore.city || ""} ${pincode || ""}`.trim(),
+        pincode: pincode || activeStore.pincode,
+        items: cart.map((item) => ({ id: item.id, qty: item.qty })),
+      });
+      const session = {
+        inviteToken: data.inviteToken,
+        memberToken: data.memberToken,
+        expiresAt: data.cart.expiresAt,
+      };
+      localStorage.setItem("tbm-shared-cart-owner", JSON.stringify(session));
+      setSharedSession(session);
+      setShareOpen(true);
+    } catch (error) {
+      setShareError(error.message);
+      setShareOpen(true);
+    } finally {
+      setShareBusy(false);
+    }
   }
 
   function chooseCategory(category) {
@@ -804,7 +933,7 @@ export default function Home() {
                         <QuantityControl
                           product={product}
                           quantity={quantity}
-                          onUpdate={updateCart}
+                          onUpdate={applyCartUpdate}
                         />
                       )}
                     </div>
@@ -993,7 +1122,7 @@ export default function Home() {
                         <QuantityControl
                           product={product}
                           quantity={quantity}
-                          onUpdate={updateCart}
+                          onUpdate={applyCartUpdate}
                         />
                       )}
                     </div>
@@ -1393,6 +1522,23 @@ export default function Home() {
             </small>
           </span>
         </div>
+        {cart.length > 0 && (
+          <button
+            className="share-cart-button"
+            disabled={shareBusy}
+            onClick={inviteFriends}
+          >
+            <Share2 />
+            <span>
+              <b>{sharedSession ? "Shared cart active" : "Invite friends"}</b>
+              <small>
+                {sharedSession
+                  ? "Friends can add items to this basket"
+                  : "Build this basket together on WhatsApp"}
+              </small>
+            </span>
+          </button>
+        )}
         <div className="cart-items">
           {cart.length === 0 ? (
             <div className="empty-cart">
@@ -1425,13 +1571,13 @@ export default function Home() {
                   <QuantityControl
                     product={item}
                     quantity={item.qty}
-                    onUpdate={updateCart}
+                    onUpdate={applyCartUpdate}
                   />
                 </div>
                 <button
                   className="cart-remove"
                   aria-label={`Remove ${item.name}`}
-                  onClick={() => removeFromCart(item.id)}
+                  onClick={() => removeCartItem(item)}
                 >
                   <X />
                 </button>
@@ -1474,6 +1620,60 @@ export default function Home() {
           </div>
         )}
       </aside>
+
+      {shareOpen && (
+        <div className="modal-backdrop" onMouseDown={() => setShareOpen(false)}>
+          <section
+            className="share-cart-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button
+              className="close-button"
+              aria-label="Close invite"
+              onClick={() => setShareOpen(false)}
+            >
+              <X />
+            </button>
+            <Share2 />
+            <span>GROUP CART</span>
+            <h2>Build your basket together</h2>
+            <p>
+              Friends can join from anywhere. Items use your locked delivery
+              store, while checkout and payment stay with you.
+            </p>
+            {shareError ? (
+              <div className="form-error">{shareError}</div>
+            ) : sharedInviteUrl ? (
+              <>
+                <a
+                  className="whatsapp-share-button"
+                  href={`https://wa.me/?text=${encodeURIComponent(
+                    `Join my Buyzaar Mart cart and add what you need: ${sharedInviteUrl}`,
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Share on WhatsApp
+                </a>
+                <button
+                  className="copy-share-button"
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(sharedInviteUrl);
+                    notify("Shared cart link copied");
+                  }}
+                >
+                  Copy invite link
+                </button>
+                <small>Invite expires in 6 hours.</small>
+              </>
+            ) : (
+              <button className="whatsapp-share-button" onClick={inviteFriends}>
+                {shareBusy ? "Creating invite..." : "Create invite link"}
+              </button>
+            )}
+          </section>
+        </div>
+      )}
     </main>
   );
 }

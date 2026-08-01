@@ -266,6 +266,50 @@ export async function ensureEcommerceSchema() {
         UNIQUE(provider, gateway_order_id)
       );
 
+      CREATE TABLE IF NOT EXISTS ecommerce_shared_carts (
+        id BIGSERIAL PRIMARY KEY,
+        public_id VARCHAR(40) NOT NULL UNIQUE,
+        invite_token_hash VARCHAR(128) NOT NULL UNIQUE,
+        owner_user_id BIGINT NOT NULL REFERENCES ecommerce_users(id) ON DELETE CASCADE,
+        store_id BIGINT NOT NULL,
+        store_name VARCHAR(255) NOT NULL,
+        area_label VARCHAR(255),
+        pincode VARCHAR(10),
+        status VARCHAR(30) NOT NULL DEFAULT 'active',
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS ecommerce_shared_cart_members (
+        id BIGSERIAL PRIMARY KEY,
+        shared_cart_id BIGINT NOT NULL REFERENCES ecommerce_shared_carts(id) ON DELETE CASCADE,
+        user_id BIGINT REFERENCES ecommerce_users(id) ON DELETE SET NULL,
+        display_name VARCHAR(80) NOT NULL,
+        member_token_hash VARCHAR(128) UNIQUE,
+        is_owner BOOLEAN NOT NULL DEFAULT FALSE,
+        joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS ecommerce_shared_cart_items (
+        id BIGSERIAL PRIMARY KEY,
+        shared_cart_id BIGINT NOT NULL REFERENCES ecommerce_shared_carts(id) ON DELETE CASCADE,
+        product_id BIGINT NOT NULL,
+        product_name VARCHAR(255) NOT NULL,
+        image_url TEXT,
+        unit VARCHAR(60),
+        mrp NUMERIC(14,2) NOT NULL DEFAULT 0,
+        selling_price NUMERIC(14,2) NOT NULL DEFAULT 0,
+        stock NUMERIC(14,3) NOT NULL DEFAULT 0,
+        qty NUMERIC(14,3) NOT NULL,
+        added_by_member_id BIGINT REFERENCES ecommerce_shared_cart_members(id) ON DELETE SET NULL,
+        added_by_name VARCHAR(80),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(shared_cart_id, product_id)
+      );
+
       CREATE INDEX IF NOT EXISTS idx_ecommerce_otp_phone_created
         ON ecommerce_otp_challenges(phone, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_ecommerce_sessions_user_active
@@ -280,6 +324,10 @@ export async function ensureEcommerceSchema() {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_ecommerce_payments_gateway_payment
         ON ecommerce_payments(provider, gateway_payment_id)
         WHERE gateway_payment_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_shared_carts_owner_status
+        ON ecommerce_shared_carts(owner_user_id, status, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_shared_cart_items_cart
+        ON ecommerce_shared_cart_items(shared_cart_id, updated_at DESC);
     `);
     schemaInitialized = true;
     console.log('[Ecom DB] Schema verified/initialized.');
