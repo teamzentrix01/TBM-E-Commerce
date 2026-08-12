@@ -23,6 +23,11 @@ const money = (value) =>
     maximumFractionDigits: 2,
   }).format(Number(value || 0));
 
+const sentenceCase = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
 export default function ProductPage() {
   const { id } = useParams();
   const {
@@ -102,11 +107,23 @@ export default function ProductPage() {
   const saved = wishlist.some(
     (item) => String(item.id) === String(product.id),
   );
+  const stock = Math.max(Math.floor(Number(product.stock) || 0), 0);
+  const category = sentenceCase(product.category_name || "General");
+  const brand = sentenceCase(product.brand_name || "The Buyzaar Mart");
+  const unit = product.unit || "1 unit";
+  const description =
+    product.description?.trim() ||
+    `${product.name} is available for local delivery from The Buyzaar Mart.`;
+  const descriptionHighlights = [
+    `${unit} pack`,
+    `${category} essential`,
+    storeVerified ? "Local store stock" : "Store checked on add",
+  ];
 
   return (
     <>
       <AppHeader />
-      <main className="route-page">
+      <main className="route-page product-route">
         <Link className="back-link" href="/">
           <ChevronLeft /> Back to products
         </Link>
@@ -141,7 +158,7 @@ export default function ProductPage() {
             </div>
             <p className="tax-note">Inclusive of all taxes</p>
             <div className="stock-pill">
-              In stock - {Math.floor(product.stock)} available locally
+              In stock - {stock} available locally
             </div>
             <div className="detail-actions">
               {quantity === 0 ? (
@@ -153,14 +170,19 @@ export default function ProductPage() {
                 </button>
               ) : (
                 <div className="large-qty">
-                  <button onClick={() => updateCart(product, -1)}>
+                  <button
+                    aria-label="Remove one item from cart"
+                    onClick={() => updateCart(product, -1)}
+                  >
                     <Minus />
                   </button>
-                  <b>{quantity} in cart</b>
+                  <span>
+                    <b>{quantity}</b>
+                    <small>{quantity === 1 ? "item" : "items"} in cart</small>
+                  </span>
                   <button
-                    disabled={
-                      quantity >= Math.floor(Number(product.stock))
-                    }
+                    aria-label="Add one more item to cart"
+                    disabled={quantity >= stock}
                     onClick={() => updateCart(product, 1)}
                   >
                     <Plus />
@@ -182,7 +204,7 @@ export default function ProductPage() {
                   <b>Local delivery</b>
                   <small>
                     {storeVerified
-                      ? `From ${activeStore?.name}`
+                      ? `From ${activeStore?.name || "your selected store"}`
                       : "Nearest store verified when you add"}
                   </small>
                 </span>
@@ -199,23 +221,27 @@ export default function ProductPage() {
               <h2>Product details</h2>
               <p>
                 <span>Category</span>
-                <b>{product.category_name || "General"}</b>
+                <b>{category}</b>
               </p>
               <p>
                 <span>Brand</span>
-                <b>{product.brand_name || "The Buyzaar Mart"}</b>
+                <b>{brand}</b>
               </p>
               <p>
                 <span>Tax rate</span>
                 <b>{product.tax_rate || 0}%</b>
               </p>
             </div>
-            {product.description && (
-              <div className="product-facts product-description">
-                <h2>Description</h2>
-                <p>{product.description}</p>
+            <div className="product-facts product-description">
+              <span className="description-kicker">Why you’ll like it</span>
+              <h2>Description</h2>
+              <p>{description}</p>
+              <div className="description-highlights">
+                {descriptionHighlights.map((item) => (
+                  <span key={item}>{item}</span>
+                ))}
               </div>
-            )}
+            </div>
           </div>
         </section>
       </main>
