@@ -117,7 +117,7 @@ export default function ProductPage() {
   const descriptionHighlights = [
     `${unit} pack`,
     `${category} essential`,
-    storeVerified ? "Local store stock" : "Store checked on add",
+    storeVerified ? "Available locally" : "Store checked on add",
   ];
 
   return (
@@ -157,9 +157,7 @@ export default function ProductPage() {
               )}
             </div>
             <p className="tax-note">Inclusive of all taxes</p>
-            <div className="stock-pill">
-              In stock - {stock} available locally
-            </div>
+            <div className="stock-pill">In stock</div>
             <div className="detail-actions">
               {quantity === 0 ? (
                 <button

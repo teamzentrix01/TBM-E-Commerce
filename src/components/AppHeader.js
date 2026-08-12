@@ -151,7 +151,7 @@ export function PageFooter() {
             from your nearest Buyzaar Mart.
           </p>
           <div className="footer-promise">
-            <span>Live local stock</span>
+            <span>Local availability</span>
             <span>Store-wise prices</span>
           </div>
         </div>

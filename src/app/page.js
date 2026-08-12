@@ -1102,7 +1102,7 @@ export default function Home() {
                     </button>
                     <p>
                       {product.unit || "1 unit"}
-                      <span>{Math.floor(product.stock)} in stock</span>
+                      <span>In stock</span>
                     </p>
                     <div className="price-row">
                       <div>
@@ -1384,7 +1384,7 @@ export default function Home() {
                       : "Availability verified on add to cart"}
                   </b>
                   <small>
-                    {Math.floor(quickView.stock)} units in local stock
+                    Stock is checked from your selected local store
                   </small>
                 </span>
               </div>
