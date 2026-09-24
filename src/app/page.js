@@ -43,6 +43,11 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const [nextPage, setNextPage] = useState(2);
+  const [hasMoreProducts, setHasMoreProducts] = useState(false);
+  const [visibleSavingsCount, setVisibleSavingsCount] = useState(8);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreProductsError, setMoreProductsError] = useState(false);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search).get("q");
@@ -57,16 +62,24 @@ export default function Home() {
       setCategories([]);
       setBanners(resolveHomeBanners(null));
       setReadyPacks([]);
+      setHasMoreProducts(false);
+      setVisibleSavingsCount(8);
       return;
     }
     let cancelled = false;
     const controller = new AbortController();
     setLoading(true);
     setError("");
+    setProducts([]);
+    setNextPage(2);
+    setHasMoreProducts(false);
+    setVisibleSavingsCount(8);
+    setLoadingMore(false);
+    setMoreProductsError(false);
     Promise.all([
       fetchProducts({
         storeId: store.id,
-        pageSize: 48,
+        pageSize: 24,
         signal: controller.signal,
       }),
       fetchCategories(store.id),
@@ -85,6 +98,10 @@ export default function Home() {
             store_id: store.id,
           })),
         );
+        setNextPage(2);
+        setHasMoreProducts(Number(data.totalPages || 1) > 1);
+        setVisibleSavingsCount(8);
+        setMoreProductsError(false);
         setCategories(categoryData.records || []);
         setBanners(resolveHomeBanners(bannerData));
         setReadyPacks(
@@ -106,8 +123,46 @@ export default function Home() {
     };
   }, [ready, store?.id, attempt]);
 
+  async function loadMoreProducts() {
+    if (!store?.id || loadingMore) return;
+    const retrying = moreProductsError;
+    const targetCount = retrying
+      ? visibleSavingsCount
+      : visibleSavingsCount + 8;
+    if (!retrying) setVisibleSavingsCount(targetCount);
+    setLoadingMore(true);
+    setMoreProductsError(false);
+    try {
+      if (targetCount >= products.length && hasMoreProducts) {
+        const data = await fetchProducts({
+          storeId: store.id,
+          page: nextPage,
+          pageSize: 24,
+        });
+        const nextRecords = (data.records || []).map((product) => ({
+          ...product,
+          store_id: store.id,
+        }));
+        setProducts((current) => [
+          ...new Map(
+            [...current, ...nextRecords].map((product) => [
+              String(product.id),
+              product,
+            ]),
+          ).values(),
+        ]);
+        setNextPage(nextPage + 1);
+        setHasMoreProducts(nextPage < Number(data.totalPages || nextPage));
+      }
+    } catch {
+      setMoreProductsError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
   const picks = sortProducts(products, "featured");
-  const savings = sortProducts(products, "discount").slice(0, 8);
+  const savings = sortProducts(products, "discount");
   const images = savings.filter((product) => product.image_url).slice(0, 3);
   const showCatalogLoading = !ready || (loading && !products.length);
   const shopCategories = buildShopCategories({
@@ -334,9 +389,30 @@ export default function Home() {
             </Link>
           </div>
           <ProductGrid
-            products={savings}
+            products={savings.slice(0, visibleSavingsCount)}
             loading={showCatalogLoading && !storeError && !savings.length}
           />
+          {moreProductsError ? (
+            <p className="bz-load-more-error" role="alert">
+              Could not load more products. Please try again.
+            </p>
+          ) : null}
+          {visibleSavingsCount < savings.length || hasMoreProducts ? (
+            <div className="bz-load-more">
+              <button
+                className="bz-button bz-button-light"
+                type="button"
+                onClick={loadMoreProducts}
+                disabled={loadingMore}
+              >
+                {loadingMore
+                  ? "Loading more products…"
+                  : moreProductsError
+                    ? "Try again"
+                    : "Load more products"}
+              </button>
+            </div>
+          ) : null}
         </section>
 
         <section className="bz-benefits" aria-label="Shopping with Buyzaar">

@@ -3,7 +3,17 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronRight, SlidersHorizontal, X } from "lucide-react";
+import {
+  Coffee,
+  Grid2X2,
+  House,
+  Leaf,
+  Package,
+  ShoppingBasket,
+  SlidersHorizontal,
+  Sparkles,
+  X,
+} from "lucide-react";
 import AppHeader, { PageFooter } from "@/components/AppHeader";
 import { EmptyState, ErrorState, Modal, ProductGrid } from "@/components/shop/ShopUI";
 import useCatalogStore from "@/components/shop/useCatalogStore";
@@ -14,9 +24,26 @@ import {
 } from "@/lib/api";
 import { filterPublicFacets, listingUrl, sortProducts, titleCaseLabel } from "@/lib/shop.mjs";
 
-function categoryInitial(name = "") {
-  const cleaned = String(name).trim();
-  return cleaned ? cleaned.charAt(0).toUpperCase() : "A";
+function categoryGlyph(name = "") {
+  const label = String(name).trim().toLowerCase();
+  if (/^all$/.test(label)) return Grid2X2;
+  if (/non[\s-]?food/.test(label)) return Package;
+  if (/house|home|clean/.test(label)) return House;
+  if (/fruit|vegetable|fresh|produce/.test(label)) return Leaf;
+  if (/beverage|drink|tea|coffee/.test(label)) return Coffee;
+  if (/personal|beauty|cosmetic|care/.test(label)) return Sparkles;
+  if (/food|grocery|staple/.test(label)) return ShoppingBasket;
+  return Package;
+}
+
+function CategoryRailIcon({ item }) {
+  const [imageFailed, setImageFailed] = useState(false);
+  const Icon = categoryGlyph(item.name);
+  return item.image_url && !imageFailed ? (
+    <img src={item.image_url} alt="" onError={() => setImageFailed(true)} />
+  ) : (
+    <Icon size={23} strokeWidth={1.8} aria-hidden="true" />
+  );
 }
 
 function Results({ store, query, category, subcategory, brand, sort, attempt }) {
@@ -285,7 +312,7 @@ function Listing() {
               onClick={() => change("category", "")}
             >
               <span className="bz-category-rail-icon" aria-hidden="true">
-                All
+                <Grid2X2 size={23} strokeWidth={1.8} />
               </span>
               <span>All</span>
             </button>
@@ -302,11 +329,7 @@ function Listing() {
                   title={item.name}
                 >
                   <span className="bz-category-rail-icon" aria-hidden="true">
-                    {item.image_url ? (
-                      <img src={item.image_url} alt="" />
-                    ) : (
-                      categoryInitial(item.name)
-                    )}
+                    <CategoryRailIcon item={item} />
                   </span>
                   <span>{titleCaseLabel(item.name)}</span>
                 </button>

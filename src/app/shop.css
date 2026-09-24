@@ -5525,3 +5525,121 @@ a.bz-detail-brand:hover {
     font-size: 11px;
   }
 }
+
+.bz-listing-layout {
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 20px;
+}
+
+.bz-category-rail {
+  gap: 7px;
+  padding: 7px 8px 12px 0;
+}
+
+.bz-category-rail-item {
+  min-height: 86px;
+  gap: 7px;
+  padding: 9px 5px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+}
+
+.bz-category-rail-item:hover {
+  border-color: #e7ece5;
+  background: #f7f9f6;
+  transform: translateY(-1px);
+}
+
+.bz-category-rail-item.is-active {
+  border-color: #dcebdd;
+  background: #eef6ef;
+  color: var(--bz-green);
+}
+
+.bz-category-rail-icon {
+  width: 50px;
+  height: 50px;
+  flex: 0 0 50px;
+  border: 1px solid #e5ebe3;
+  border-radius: 15px;
+  background: linear-gradient(145deg, #fff, #f3f7f2);
+  color: #4d7a57;
+  box-shadow: 0 2px 7px rgba(39, 71, 45, 0.06);
+  transition:
+    color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.bz-category-rail-item:hover .bz-category-rail-icon {
+  transform: scale(1.04);
+  box-shadow: 0 5px 12px rgba(39, 71, 45, 0.1);
+}
+
+.bz-category-rail-item.is-active .bz-category-rail-icon {
+  border-color: #cfe2d0;
+  background: #fff;
+  color: var(--bz-green);
+  box-shadow: 0 3px 9px rgba(39, 71, 45, 0.08);
+}
+
+.bz-category-rail-icon img {
+  width: 100%;
+  height: 100%;
+  padding: 7px;
+  border-radius: inherit;
+  background: #fff;
+  object-fit: contain;
+}
+
+.bz-category-rail-item > span:last-child {
+  max-width: 100%;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+@media (max-width: 1100px) {
+  .bz-listing-layout {
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 16px;
+  }
+}
+
+@media (max-width: 900px) {
+  .bz-listing-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .bz-category-rail {
+    gap: 8px;
+    padding: 5px 0 11px;
+  }
+
+  .bz-category-rail-item {
+    min-height: 80px;
+    gap: 6px;
+    padding: 6px 4px;
+  }
+
+  .bz-category-rail-icon {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+    border-radius: 13px;
+  }
+
+  .bz-category-rail-item > span:last-child {
+    max-width: 76px;
+    font-size: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bz-category-rail-item,
+  .bz-category-rail-icon {
+    transition: none;
+  }
+}
