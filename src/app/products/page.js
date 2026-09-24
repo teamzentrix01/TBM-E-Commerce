@@ -180,6 +180,7 @@ function Listing() {
   const popularBrands = [...(facets.brands || [])]
     .sort((a, b) => Number(b.product_count || 0) - Number(a.product_count || 0))
     .slice(0, 12);
+  const activeFilterCount = [query, category, subcategory, brand].filter(Boolean).length;
   function filters() {
     return (
       <>
@@ -313,6 +314,34 @@ function Listing() {
             })}
           </aside>
           <section className="bz-results">
+            <div className="bz-mobile-listing-tools">
+              <button
+                className="bz-button bz-button-light bz-mobile-filter"
+                onClick={() => setOpen(true)}
+                aria-haspopup="dialog"
+              >
+                <SlidersHorizontal size={16} />
+                Filters
+                {activeFilterCount > 0 ? (
+                  <span className="bz-filter-count" aria-label={`${activeFilterCount} active filters`}>
+                    {activeFilterCount}
+                  </span>
+                ) : null}
+              </button>
+              <label className="bz-mobile-sort">
+                <span>Sort</span>
+                <select
+                  value={sort}
+                  onChange={(event) => change("sort", event.target.value)}
+                  aria-label="Sort products"
+                >
+                  <option value="featured">Recommended</option>
+                  <option value="price-low">Price: low to high</option>
+                  <option value="price-high">Price: high to low</option>
+                  <option value="discount">Biggest savings</option>
+                </select>
+              </label>
+            </div>
             {popularBrands.length > 0 && (
               <div className="bz-brand-chips" aria-label="Shop by brand">
                 <button
@@ -339,12 +368,6 @@ function Listing() {
                 ))}
               </div>
             )}
-            <button
-              className="bz-button bz-button-light bz-mobile-filter"
-              onClick={() => setOpen(true)}
-            >
-              <SlidersHorizontal size={16} /> Filters
-            </button>
             {(query || category || subcategory || brand) && (
               <div className="bz-filter-chips">
                 {[

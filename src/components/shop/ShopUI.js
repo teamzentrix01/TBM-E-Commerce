@@ -346,9 +346,7 @@ export function ProductCard({ product }) {
         <div className="bz-product-meta">
           {pack ? <span className="bz-unit">{pack}</span> : null}
           {stock > 0 ? (
-            <span className={stock <= 5 ? "bz-stock-low" : "bz-stock-ok"}>
-              {stock <= 5 ? `Only ${stock} left` : "Available"}
-            </span>
+            <span className="bz-stock-ok">Available</span>
           ) : (
             <span className="bz-stock-out">Out of stock</span>
           )}

@@ -111,7 +111,9 @@ export default function CartPage() {
   return (
     <>
       <AppHeader />
-      <main className="bz-shell bz-cart-page">
+      <main
+        className={`bz-shell bz-cart-page${ready && sessionReady && cart.length > 0 ? " has-mobile-checkout" : ""}`}
+      >
         <Link className="bz-back-link" href="/products">
           <ArrowLeft size={16} /> Continue shopping
         </Link>
@@ -282,6 +284,29 @@ export default function CartPage() {
           </>
         )}
       </main>
+      {ready && sessionReady && cart.length > 0 ? (
+        <div className="bz-cart-mobile-checkout">
+          <span>
+            <small>Total</small>
+            <strong>{money(totals.total)}</strong>
+          </span>
+          <Link
+            className={`bz-button${busy ? " is-disabled" : ""}`}
+            aria-disabled={busy}
+            href={customer ? "/checkout" : accountLoginHref("/checkout")}
+            onClick={(event) => {
+              if (busy) {
+                event.preventDefault();
+                return;
+              }
+              if (!customer) rememberLoginReturn("/checkout");
+            }}
+          >
+            {customer ? "Checkout" : "Login to checkout"}
+            <ArrowRight size={17} />
+          </Link>
+        </div>
+      ) : null}
       <PageFooter />
       {shareOpen && (
         <Modal
