@@ -38,13 +38,8 @@ function categoryGlyph(name = "") {
 }
 
 function CategoryRailIcon({ item }) {
-  const [imageFailed, setImageFailed] = useState(false);
   const Icon = categoryGlyph(item.name);
-  return item.image_url && !imageFailed ? (
-    <img src={item.image_url} alt="" onError={() => setImageFailed(true)} />
-  ) : (
-    <Icon size={23} strokeWidth={1.8} aria-hidden="true" />
-  );
+  return <Icon size={23} strokeWidth={1.8} aria-hidden="true" />;
 }
 
 function Results({ store, query, category, subcategory, brand, sort, attempt }) {
