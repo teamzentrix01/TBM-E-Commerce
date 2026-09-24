@@ -219,6 +219,9 @@ export async function ensureEcommerceSchema() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
 
+      ALTER TABLE ecommerce_order_items
+        ADD COLUMN IF NOT EXISTS price_batch_id BIGINT;
+
       CREATE TABLE IF NOT EXISTS ecommerce_order_status_history (
         id BIGSERIAL PRIMARY KEY,
         order_id BIGINT NOT NULL REFERENCES ecommerce_orders(id) ON DELETE CASCADE,

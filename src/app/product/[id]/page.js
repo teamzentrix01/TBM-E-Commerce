@@ -12,7 +12,7 @@ import {
 import AppHeader, { PageFooter } from "@/components/AppHeader";
 import {
   AddToCart,
-  EmptyState,
+  ErrorState,
   Price,
   ProductGrid,
   ProductGallery,
@@ -100,11 +100,7 @@ export default function ProductPage() {
     product && Number(product.mrp) > Number(product.selling_price)
       ? Number(product.mrp) - Number(product.selling_price)
       : 0;
-  const description =
-    product?.description?.trim() ||
-    (product
-      ? `${product.name} is available for local delivery from The Buyzaar Mart.`
-      : "");
+  const description = product?.description?.trim() || "";
 
   return (
     <>
@@ -130,21 +126,14 @@ export default function ProductPage() {
           )}
         </nav>
         {error || storeError ? (
-          <>
-            <EmptyState
-              title="Product unavailable"
-              description={error || storeError}
-            />
-            <button
-              className="bz-button bz-button-light"
-              onClick={() => {
-                retry();
-                setAttempt((value) => value + 1);
-              }}
-            >
-              Try again
-            </button>
-          </>
+          <ErrorState
+            title="We couldn't load this product"
+            description="The product details for your selected store couldn't be loaded right now."
+            onRetry={() => {
+              retry();
+              setAttempt((value) => value + 1);
+            }}
+          />
         ) : !product ? (
           <div className="bz-detail-loading" aria-label="Loading product">
             <div />
@@ -232,10 +221,12 @@ export default function ProductPage() {
                   </div>
                 </div>
 
-                <details className="bz-details" open>
-                  <summary>About this product</summary>
-                  <p>{description}</p>
-                </details>
+                {description ? (
+                  <details className="bz-details" open>
+                    <summary>About this product</summary>
+                    <p>{description}</p>
+                  </details>
+                ) : null}
                 <details className="bz-details" open>
                   <summary>Product information</summary>
                   <dl>

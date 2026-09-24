@@ -115,21 +115,20 @@ export default function AppHeader({ search = "", onSearch }) {
   return (
     <>
       <header className="bz-header bz-header-blinkit">
+        <div className="bz-topbar">
+          <span><Truck size={13} /> {storeVerified ? `Delivering to ${pincode}` : "Choose a delivery location"}</span>
+          <span><MapPin size={13} /> Live prices and availability from your local store</span>
+        </div>
         <div className="bz-header-main">
           <Link className="bz-logo" href="/" aria-label="The Buyzaar Mart home">
             <img src="/buyzaar-logo.svg" alt="The Buyzaar Mart" />
           </Link>
-          <button className="bz-location" type="button" onClick={openLocation}>
+          <button className="bz-location" type="button" onClick={openLocation} aria-label="Change delivery location">
             <MapPin size={20} />
             <span>
-              <small>
-                {storeVerified
-                  ? "Delivering in your area"
-                  : "Set delivery location"}
-              </small>
+              <small>Deliver to</small>
               <b>
-                {pincode || "Detect location"}
-                {activeStore?.city ? `, ${activeStore.city}` : ""}
+                {activeStore?.name || pincode || "Choose location"}
                 <ChevronDown size={14} />
               </b>
             </span>
@@ -150,7 +149,7 @@ export default function AppHeader({ search = "", onSearch }) {
                 setQuery(event.target.value);
                 onSearch?.(event.target.value);
               }}
-              placeholder='Search "atta", "milk", "snacks"…'
+              placeholder="Search products, brands & everyday essentials"
             />
             <button type="submit" aria-label="Submit search">
               <ArrowRight size={18} />
@@ -202,9 +201,16 @@ export default function AppHeader({ search = "", onSearch }) {
           title="Your delivery location"
           onClose={() => setLocationOpen(false)}
         >
+          <div className="bz-location-current">
+            <MapPin size={18} />
+            <span>
+              <small>Currently selected</small>
+              <b>{activeStore?.name || "No store selected"}</b>
+              <em>{[activeStore?.city, pincode].filter(Boolean).join(" · ") || "Set a location to check availability"}</em>
+            </span>
+          </div>
           <p>
-            Use your current location to find a Buyzaar Mart within 5 km, or
-            enter a pincode to browse local prices.
+            Use your current location or enter a pincode to find the store that serves your area.
           </p>
           <button
             type="button"

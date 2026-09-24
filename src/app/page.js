@@ -12,7 +12,7 @@ import {
   Truck,
 } from "lucide-react";
 import AppHeader, { PageFooter } from "@/components/AppHeader";
-import { ProductGrid, ProductImage } from "@/components/shop/ShopUI";
+import { ErrorState, ProductGrid, ProductImage } from "@/components/shop/ShopUI";
 import useCatalogStore from "@/components/shop/useCatalogStore";
 import { fetchCategories, fetchProducts, fetchStorefrontBanners, fetchStorefrontHampers } from "@/lib/api";
 import { resolveHomeBanners } from "@/lib/banners.mjs";
@@ -287,18 +287,16 @@ export default function Home() {
         </section>
 
         {(error || storeError) && (
-          <div className="bz-notice" role="alert">
-            <p>{error || storeError}</p>
-            <button
-              className="bz-button bz-button-light"
-              onClick={() => {
-                retry();
-                setAttempt((value) => value + 1);
-              }}
-            >
-              Try again
-            </button>
-          </div>
+          <ErrorState
+            title={storeError ? "We couldn't find a store for this area" : "We couldn't load products"}
+            description={storeError
+              ? "Choose another delivery location or try again."
+              : "Your selected store's inventory couldn't be loaded right now."}
+            onRetry={() => {
+              retry();
+              setAttempt((value) => value + 1);
+            }}
+          />
         )}
 
         <section className="bz-section">

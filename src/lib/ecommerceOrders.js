@@ -93,7 +93,8 @@ export async function listOrders({
              'mrp', oi.mrp,
              'selling_price', oi.selling_price,
              'tax_rate', oi.tax_rate,
-             'line_total', oi.line_total
+             'line_total', oi.line_total,
+             'price_batch_id', oi.price_batch_id
            ) ORDER BY oi.id
          ) FILTER (WHERE oi.id IS NOT NULL),
          '[]'::jsonb

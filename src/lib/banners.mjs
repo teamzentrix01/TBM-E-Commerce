@@ -2,9 +2,9 @@
 
 export const HERO_BANNER = {
   eyebrow: "YOUR NEIGHBOURHOOD MART",
-  title: "Stock up on daily essentials",
+  title: "Your everyday shopping, closer to home.",
   subtitle:
-    "Farm-fresh groceries, household favourites and everyday value from your local Buyzaar store.",
+    "Shop genuine everyday essentials with live availability and store-wise prices from your local Buyzaar Mart.",
   cta: "Shop now",
   href: "/products",
   image_url: null,

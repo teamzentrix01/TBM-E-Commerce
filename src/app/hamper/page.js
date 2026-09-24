@@ -480,10 +480,7 @@ function HamperBuilder() {
                             href={`/product/${product.id}`}
                             className="bz-hamper-product-media"
                           >
-                            <ProductImage
-                              src={product.image_url}
-                              alt={product.name}
-                            />
+                            <ProductImage product={product} />
                           </Link>
                           <div>
                             <Link href={`/product/${product.id}`}>
@@ -610,10 +607,7 @@ function HamperBuilder() {
                               transform: `translate(${(index % 4) * 10 - 12}px, ${Math.floor(index / 4) * -8}px) rotate(${(index % 3) * 4 - 4}deg)`,
                             }}
                           >
-                            <ProductImage
-                              src={item.image_url}
-                              alt={item.name}
-                            />
+                            <ProductImage product={item} />
                           </div>
                         ))
                       )}
@@ -633,7 +627,7 @@ function HamperBuilder() {
                   <div className="bz-hamper-preview-list">
                     {selected.map((item) => (
                       <div key={item.id}>
-                        <ProductImage src={item.image_url} alt={item.name} />
+                        <ProductImage product={item} />
                         <div>
                           <b>{item.name}</b>
                           <small>

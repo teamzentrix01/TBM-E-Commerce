@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Gift,
   Grid2X2,
+  Heart,
   Home,
   ShoppingCart,
   UserRound,
@@ -20,10 +20,10 @@ const TABS = [
     match: (path) => path === "/products" || path.startsWith("/product/"),
   },
   {
-    href: "/hamper",
-    label: "Hampers",
-    icon: Gift,
-    match: (path) => path.startsWith("/hamper"),
+    href: "/wishlist",
+    label: "Saved",
+    icon: Heart,
+    match: (path) => path.startsWith("/wishlist"),
   },
   {
     href: "/cart",

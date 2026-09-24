@@ -19,6 +19,8 @@ import { cartTotals, discount, formatPackSize, listingUrl, money, productBrandLa
 
 export function ProductImage({ product, eager = false }) {
   const [failedUrl, setFailedUrl] = useState(null);
+  const [loadedUrl, setLoadedUrl] = useState(null);
+  const imageUrl = product?.image_url;
   if (!product) {
     return (
       <span className="bz-image-fallback">
@@ -27,13 +29,17 @@ export function ProductImage({ product, eager = false }) {
       </span>
     );
   }
-  return product.image_url && failedUrl !== product.image_url ? (
-    <img
-      src={product.image_url}
-      alt={product.name}
-      loading={eager ? "eager" : "lazy"}
-      onError={() => setFailedUrl(product.image_url)}
-    />
+  return imageUrl && failedUrl !== imageUrl ? (
+    <span className={`bz-image-frame${loadedUrl === imageUrl ? " is-loaded" : ""}`}>
+      {loadedUrl !== imageUrl && <span className="bz-image-placeholder" aria-hidden="true" />}
+      <img
+        src={imageUrl}
+        alt={product.name || "Product"}
+        loading={eager ? "eager" : "lazy"}
+        onLoad={() => setLoadedUrl(imageUrl)}
+        onError={() => setFailedUrl(imageUrl)}
+      />
+    </span>
   ) : (
     <span className="bz-image-fallback">
       <ShoppingBag aria-hidden="true" />
@@ -61,6 +67,7 @@ export function ProductGallery({ product }) {
   const urls = productGalleryUrls(product);
   const [active, setActive] = useState(0);
   const [failedUrl, setFailedUrl] = useState(null);
+  const [loadedUrl, setLoadedUrl] = useState(null);
   const [zoom, setZoom] = useState(null);
   const mainRef = useRef(null);
   const thumbsRef = useRef(null);
@@ -69,6 +76,7 @@ export function ProductGallery({ product }) {
   useEffect(() => {
     setActive(0);
     setFailedUrl(null);
+    setLoadedUrl(null);
     setZoom(null);
   }, [product?.id, product?.image_url, urls.length, urls[0]]);
 
@@ -122,10 +130,12 @@ export function ProductGallery({ product }) {
           onMouseMove={handleMove}
           onMouseLeave={() => setZoom(null)}
         >
+          {loadedUrl !== current && <span className="bz-image-placeholder" aria-hidden="true" />}
           <img
             src={current}
             alt={product?.name || "Product"}
             loading="eager"
+            onLoad={() => setLoadedUrl(current)}
             onError={() => setFailedUrl(current)}
           />
           {zooming ? (
@@ -317,6 +327,10 @@ export function ProductCard({ product }) {
         <SaveProduct product={product} />
       </div>
       <div className="bz-product-info">
+        <Link className="bz-product-name" href={`/product/${product.id}`} title={product.name}>
+          {product.name}
+        </Link>
+        <Price product={product} />
         {brand && product.brand_id ? (
           <Link
             className="bz-product-brand"
@@ -329,18 +343,16 @@ export function ProductCard({ product }) {
             {brand || "\u00A0"}
           </span>
         )}
-        <Link className="bz-product-name" href={`/product/${product.id}`}>
-          {product.name}
-        </Link>
         <div className="bz-product-meta">
           {pack ? <span className="bz-unit">{pack}</span> : null}
           {stock > 0 ? (
-            <span className="bz-stock-ok">In stock</span>
+            <span className={stock <= 5 ? "bz-stock-low" : "bz-stock-ok"}>
+              {stock <= 5 ? `Only ${stock} left` : "Available"}
+            </span>
           ) : (
             <span className="bz-stock-out">Out of stock</span>
           )}
         </div>
-        <Price product={product} />
         <AddToCart product={product} compact />
       </div>
     </article>
@@ -350,18 +362,19 @@ export function ProductCard({ product }) {
 export function ProductGrid({ products, loading = false }) {
   return (
     <div className="bz-product-grid" aria-busy={loading}>
-      {loading && !products.length
-        ? Array.from({ length: 8 }, (_, i) => (
-            <div className="bz-skeleton-card" key={i}>
+      {products.map((product) => (
+        <ProductCard key={product.id} product={product} />
+      ))}
+      {loading
+        ? Array.from({ length: products.length ? 4 : 8 }, (_, i) => (
+            <div className="bz-skeleton-card" key={`loading-${i}`}>
               <div />
               <span />
               <span />
               <span />
             </div>
           ))
-        : products.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
+        : null}
     </div>
   );
 }
@@ -432,6 +445,29 @@ export function EmptyState({
         <ArrowRight size={16} />
       </Link>
     </div>
+  );
+}
+
+export function ErrorState({
+  title = "We couldn't load this right now",
+  description = "Please try again in a moment.",
+  onRetry,
+}) {
+  return (
+    <section className="bz-error-state" role="alert">
+      <span className="bz-error-state-icon" aria-hidden="true">
+        <ShoppingBag size={22} />
+      </span>
+      <div>
+        <h2>{title}</h2>
+        <p>{description}</p>
+      </div>
+      {onRetry ? (
+        <button type="button" className="bz-button bz-button-light" onClick={onRetry}>
+          Try again
+        </button>
+      ) : null}
+    </section>
   );
 }
 

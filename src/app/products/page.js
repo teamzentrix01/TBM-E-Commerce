@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronRight, SlidersHorizontal, X } from "lucide-react";
 import AppHeader, { PageFooter } from "@/components/AppHeader";
-import { EmptyState, Modal, ProductGrid } from "@/components/shop/ShopUI";
+import { EmptyState, ErrorState, Modal, ProductGrid } from "@/components/shop/ShopUI";
 import useCatalogStore from "@/components/shop/useCatalogStore";
 import {
   fetchProducts,
@@ -23,6 +23,7 @@ function Results({ store, query, category, subcategory, brand, sort, attempt }) 
   const [products, setProducts] = useState([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalResults, setTotalResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -65,6 +66,7 @@ function Results({ store, query, category, subcategory, brand, sort, attempt }) 
           ).values(),
         ]);
         setTotalPages(query ? 1 : Number(data.totalPages || 1));
+        setTotalResults(Number.isFinite(Number(data.total)) ? Number(data.total) : null);
       })
       .catch((failure) => {
         if (failure.name !== "AbortError") setError(failure.message);
@@ -79,24 +81,24 @@ function Results({ store, query, category, subcategory, brand, sort, attempt }) 
       <div className="bz-results-count" aria-live="polite">
         {loading && !products.length
           ? "Finding your local favourites…"
-          : `${products.length} products loaded`}
-        <span>Sorting applies to loaded results</span>
+          : totalResults != null
+            ? `${totalResults.toLocaleString("en-IN")} products`
+            : `${products.length.toLocaleString("en-IN")} products shown`}
+        {totalResults != null && totalResults > products.length ? (
+          <span>Showing {products.length.toLocaleString("en-IN")} so far · sorted items shown</span>
+        ) : null}
       </div>
       {error && (
-        <div className="bz-notice" role="alert">
-          <p>{error}</p>
-          <button
-            className="bz-button bz-button-light"
-            onClick={() => setRetry((value) => value + 1)}
-          >
-            Retry
-          </button>
-        </div>
+        <ErrorState
+          title="We couldn't load products"
+          description="Your selected store's inventory couldn't be loaded right now. Please try again."
+          onRetry={() => setRetry((value) => value + 1)}
+        />
       )}
       <ProductGrid products={sortProducts(products, sort)} loading={loading} />
       {!loading && !error && !products.length && (
-        <EmptyState
-          title="No matching products"
+          <EmptyState
+            title="No matching products"
           description="Try a different search, category or brand."
           action="Clear filters"
         />
@@ -424,7 +426,7 @@ export default function ProductsPage() {
     <Suspense
       fallback={
         <main className="bz-shell">
-          <p>Loading products…</p>
+            <ProductGrid products={[]} loading />
         </main>
       }
     >

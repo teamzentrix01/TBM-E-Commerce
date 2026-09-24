@@ -78,7 +78,8 @@ export async function GET() {
              'qty', oi.qty,
              'mrp', oi.mrp,
              'selling_price', oi.selling_price,
-             'line_total', oi.line_total
+             'line_total', oi.line_total,
+             'price_batch_id', oi.price_batch_id
            ) ORDER BY oi.id
          ) FILTER (WHERE oi.id IS NOT NULL),
          '[]'::jsonb
@@ -496,8 +497,8 @@ export async function POST(request) {
       await client.query(
         `INSERT INTO ecommerce_order_items (
            order_id, product_id, product_name, barcode, sku, image_url, unit,
-           qty, mrp, selling_price, tax_rate, line_total
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+           qty, mrp, selling_price, tax_rate, line_total, price_batch_id
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           order.id,
           item.product.id,
@@ -511,6 +512,7 @@ export async function POST(request) {
           item.sellingPrice,
           Number(item.product.tax_rate || 0),
           item.lineTotal,
+          Number(item.product.price_batch_id) || null,
         ],
       );
       await client.query(
