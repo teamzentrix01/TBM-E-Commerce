@@ -104,3 +104,23 @@ export function searchProducts(storeId, search, options = {}) {
   return requestPublicApi(`/api/public/search?${params.toString()}`, options);
 }
 
+export function fetchStorefrontBanners(storeId, options = {}) {
+  const params = new URLSearchParams();
+  if (storeId) params.set("store_id", String(storeId));
+  const query = params.toString();
+  return requestPublicApi(
+    `/api/public/storefront-banners${query ? `?${query}` : ""}`,
+    options,
+  );
+}
+
+export function fetchStorefrontHampers(storeId, options = {}) {
+  const params = new URLSearchParams({
+    store_id: String(storeId),
+  });
+  return requestPublicApi(
+    `/api/public/storefront-hampers?${params.toString()}`,
+    options,
+  );
+}
+

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPublicLabel } from "@/lib/shop.mjs";
 
 const SYNC_BASE_URL = (
   process.env.SYNC_PUBLIC_API_BASE_URL || "https://sync.thebuyzaarmart.com"
@@ -8,12 +9,12 @@ const CACHE_TTL_MS = 10 * 60 * 1000;
 const facetCache = new Map();
 
 function addFacet(map, id, name) {
-  if (!id || !name) return;
+  if (!id || !isPublicLabel(name)) return;
   const key = String(id);
   const current = map.get(key);
   map.set(key, {
     id: Number(id),
-    name: String(name),
+    name: String(name).trim(),
     product_count: (current?.product_count || 0) + 1,
   });
 }

@@ -27,6 +27,8 @@ import {
   cancelCustomerOrder,
   fetchCustomerOrders,
 } from "@/lib/ecommerceApi";
+import { useStore } from "@/context/StoreContext";
+import { accountLoginHref, rememberLoginReturn } from "@/lib/authNav.mjs";
 
 const money = (value) =>
   new Intl.NumberFormat("en-IN", {
@@ -238,17 +240,32 @@ function OrderItemImage({ item, className = "" }) {
 }
 
 export default function Orders() {
+  const { authReady, customer } = useStore();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [needsLogin, setNeedsLogin] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [actionError, setActionError] = useState("");
   const [activeTab, setActiveTab] = useState("active");
   const [expandedIds, setExpandedIds] = useState(() => new Set());
 
   useEffect(() => {
+    if (!authReady) return;
+    if (!customer) {
+      setNeedsLogin(true);
+      setOrders([]);
+      setError("");
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setNeedsLogin(false);
+    setLoading(true);
+    setError("");
     fetchCustomerOrders()
       .then((data) => {
+        if (cancelled) return;
         const nextOrders = data.orders || [];
         setOrders(nextOrders);
         if (
@@ -261,9 +278,16 @@ export default function Orders() {
           setActiveTab("past");
         }
       })
-      .catch((requestError) => setError(requestError.message))
-      .finally(() => setLoading(false));
-  }, []);
+      .catch((requestError) => {
+        if (!cancelled) setError(requestError.message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, customer]);
 
   function toggleDetails(orderId) {
     setExpandedIds((current) => {
@@ -337,20 +361,22 @@ export default function Orders() {
   return (
     <>
       <AppHeader />
-      <main className="route-page customer-orders-page">
-        <div className="customer-orders-heading">
-          <div className="route-title">
-            <span>YOUR ORDERS</span>
+      <main className="bz-shell bz-orders-page">
+        <div className="bz-page-heading">
+          <div>
+            <span className="bz-eyebrow">YOUR ORDERS</span>
             <h1>My orders</h1>
-            <p>Track active deliveries and quickly find previous purchases.</p>
+            <p className="bz-muted">
+              Track active deliveries and find previous purchases.
+            </p>
           </div>
           {!loading && !error && orders.length > 0 && (
-            <div className="customer-order-tabs" role="tablist" aria-label="Order type">
+            <div className="bz-order-tabs" role="tablist" aria-label="Order type">
               <button
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "active"}
-                className={activeTab === "active" ? "active" : ""}
+                className={activeTab === "active" ? "is-active" : ""}
                 onClick={() => setActiveTab("active")}
               >
                 Active <span>{activeOrders.length}</span>
@@ -359,7 +385,7 @@ export default function Orders() {
                 type="button"
                 role="tab"
                 aria-selected={activeTab === "past"}
-                className={activeTab === "past" ? "active" : ""}
+                className={activeTab === "past" ? "is-active" : ""}
                 onClick={() => setActiveTab("past")}
               >
                 Past orders <span>{pastOrders.length}</span>
@@ -367,35 +393,55 @@ export default function Orders() {
             </div>
           )}
         </div>
-        {loading ? (
-          <div className="route-empty">
-            <Clock3 />
-            <h2>Loading orders...</h2>
+        {loading || !authReady ? (
+          <div className="bz-empty">
+            <Clock3 size={42} />
+            <h2>Loading orders…</h2>
+          </div>
+        ) : needsLogin ? (
+          <div className="bz-empty">
+            <PackageCheck size={42} />
+            <h2>Login to view your orders</h2>
+            <p>
+              Track deliveries, download receipts and manage past purchases after
+              you sign in.
+            </p>
+            <Link
+              className="bz-button"
+              href={accountLoginHref("/orders")}
+              onClick={() => rememberLoginReturn("/orders")}
+            >
+              Login with OTP
+            </Link>
           </div>
         ) : error ? (
-          <div className="route-empty">
-            <PackageCheck />
-            <h2>Login to view your orders</h2>
+          <div className="bz-empty">
+            <PackageCheck size={42} />
+            <h2>Unable to load orders</h2>
             <p>{error}</p>
-            <Link href="/account">Login with OTP</Link>
+            <Link className="bz-button" href={accountLoginHref("/orders")}>
+              Login again
+            </Link>
           </div>
         ) : orders.length === 0 ? (
-          <div className="route-empty">
-            <PackageCheck />
+          <div className="bz-empty">
+            <PackageCheck size={42} />
             <h2>No orders yet</h2>
             <p>Your orders will appear here after checkout.</p>
-            <Link href="/">Start shopping</Link>
+            <Link className="bz-button" href="/products">
+              Start shopping
+            </Link>
           </div>
         ) : (
-          <div className="customer-orders-shell">
+          <div className="customer-orders-shell bz-orders-shell">
             {actionError && (
-              <p className="order-action-error" role="alert">
+              <p className="bz-notice bz-error" role="alert">
                 {actionError}
               </p>
             )}
             {visibleOrders.length === 0 ? (
-              <div className="customer-orders-tab-empty">
-                <PackageCheck />
+              <div className="bz-empty">
+                <PackageCheck size={42} />
                 <h2>
                   {activeTab === "active"
                     ? "No active orders"
@@ -406,7 +452,11 @@ export default function Orders() {
                     ? "Your next order will appear here with live status updates."
                     : "Completed and cancelled orders will appear here."}
                 </p>
-                {activeTab === "active" && <Link href="/">Start shopping</Link>}
+                {activeTab === "active" && (
+                  <Link className="bz-button" href="/products">
+                    Start shopping
+                  </Link>
+                )}
               </div>
             ) : (
               <div className="customer-orders-list">

@@ -10,6 +10,7 @@ import {
   joinSharedCart,
   updateSharedCartItem,
 } from "@/lib/sharedCartApi";
+import { productBrandLabel } from "@/lib/shop.mjs";
 
 const money = (value) =>
   new Intl.NumberFormat("en-IN", {
@@ -170,7 +171,7 @@ export default function JoinSharedCartPage() {
           return (
             <article key={product.id}>
               <div>{product.image_url ? <img src={product.image_url} alt={product.name} /> : <ShoppingBag />}</div>
-              <small>{product.brand_name || product.category_name || "BUYZAAR MART"}</small>
+              <small>{productBrandLabel(product) || "Buyzaar Mart"}</small>
               <h2>{product.name}</h2>
               <span>{product.unit || "1 unit"}</span>
               {cartItem?.added_by_name && <em>Added by {cartItem.added_by_name}</em>}

@@ -10,6 +10,10 @@ import {
 } from "react";
 import { fetchProduct, resolveStoreByPincode } from "@/lib/api";
 import { getCurrentCustomer } from "@/lib/ecommerceApi";
+import {
+  assertStoreWithinRadius,
+  getCurrentCoordinates,
+} from "@/lib/location.mjs";
 
 const StoreContext = createContext(null);
 const FULFILLMENT_TTL_MS = 2 * 60 * 60 * 1000;
@@ -39,6 +43,7 @@ export function StoreProvider({ children }) {
   const [authReady, setAuthReady] = useState(false);
   const [ready, setReady] = useState(false);
   const [locationGate, setLocationGate] = useState(null);
+  const [locationBootstrapped, setLocationBootstrapped] = useState(false);
 
   useEffect(() => {
     setCart(readStorage("tbm-cart", []));
@@ -142,6 +147,94 @@ export function StoreProvider({ children }) {
     );
   }, []);
 
+  /** Resolve nearest store from GPS (within 5 km) without selecting it. */
+  const lookupNearbyStore = useCallback(
+    async ({ pincodeHint = "" } = {}) => {
+      const coordinates = await getCurrentCoordinates();
+      const hint =
+        String(pincodeHint || pincode || activeStore?.pincode || "201304").replace(
+          /\D/g,
+          "",
+        ) || "201304";
+      const resolved = await resolveStoreByPincode(hint, coordinates, {
+        allowPincodeFallback: true,
+      });
+      assertStoreWithinRadius(resolved.store);
+      return resolved.store;
+    },
+    [activeStore?.pincode, pincode],
+  );
+
+  /** Resolve nearest store from GPS (within 5 km) and optionally mark verified. */
+  const detectNearbyStore = useCallback(
+    async ({ pincodeHint = "", markVerified = true } = {}) => {
+      const store = await lookupNearbyStore({ pincodeHint });
+      const nextPincode =
+        store?.pincode ||
+        String(pincodeHint || pincode || "").replace(/\D/g, "") ||
+        "201304";
+      selectStore(store, nextPincode, markVerified);
+      return store;
+    },
+    [lookupNearbyStore, pincode, selectStore],
+  );
+
+  /** Resolve store from a 6-digit pincode without selecting it. */
+  const lookupByPincode = useCallback(async (deliveryPincode) => {
+    const code = String(deliveryPincode || "").replace(/\D/g, "").slice(0, 6);
+    if (code.length !== 6) throw new Error("Enter a valid 6 digit pincode.");
+    const resolved = await resolveStoreByPincode(code);
+    if (!resolved.store) throw new Error("This pincode is not serviceable.");
+    return resolved.store;
+  }, []);
+
+  /** Resolve store from a 6-digit pincode and select it. */
+  const resolveByPincode = useCallback(
+    async (deliveryPincode, { markVerified = true } = {}) => {
+      const store = await lookupByPincode(deliveryPincode);
+      const code = String(deliveryPincode || "").replace(/\D/g, "").slice(0, 6);
+      selectStore(store, code, markVerified);
+      return store;
+    },
+    [lookupByPincode, selectStore],
+  );
+
+  // First visit: try GPS once, then allow catalog fallback.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    async function bootstrap() {
+      if (storeVerified || activeStore?.id || pincode) {
+        if (!cancelled) setLocationBootstrapped(true);
+        return;
+      }
+      let shouldDetect = true;
+      try {
+        if (sessionStorage.getItem("tbm-location-autodetect")) {
+          shouldDetect = false;
+        } else {
+          sessionStorage.setItem("tbm-location-autodetect", "1");
+        }
+      } catch {
+        shouldDetect = false;
+      }
+      if (shouldDetect) {
+        try {
+          await detectNearbyStore({ markVerified: true });
+        } catch {
+          /* permission denied / out of range — catalog falls back */
+        }
+      }
+      if (!cancelled) setLocationBootstrapped(true);
+    }
+    bootstrap();
+    return () => {
+      cancelled = true;
+    };
+    // Only run after storage hydrate; detectNearbyStore is stable enough for one boot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
   const commitCartUpdate = useCallback(
     (product, amount, selectedStore = activeStore) => {
       if (!product || !amount) return false;
@@ -202,26 +295,7 @@ export function StoreProvider({ children }) {
         draftPincode: pincode || activeStore?.pincode || "",
       });
       try {
-        if (!navigator.geolocation) {
-          throw new Error("Location is not supported by this browser.");
-        }
-        const coordinates = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            ({ coords }) =>
-              resolve({
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                accuracy: coords.accuracy,
-              }),
-            () =>
-              reject(
-                new Error(
-                  "Please allow current location access to find a store within 5 km.",
-                ),
-              ),
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
-          );
-        });
+        const coordinates = await getCurrentCoordinates();
         setLocationGate((current) => ({
           ...current,
           status: "Checking stores within 5 km...",
@@ -229,17 +303,9 @@ export function StoreProvider({ children }) {
         const resolved = await resolveStoreByPincode(
           pincode || activeStore?.pincode || "201304",
           coordinates,
+          { allowPincodeFallback: true },
         );
-        const distance = Number(resolved.store?.delivery_distance_km);
-        const radius = Math.min(
-          Number(resolved.store?.delivery_radius_km || 5),
-          5,
-        );
-        if (!resolved.store || !Number.isFinite(distance) || distance > radius) {
-          throw new Error(
-            "Sorry, no Buyzaar Mart store is available within 5 km of your current location.",
-          );
-        }
+        assertStoreWithinRadius(resolved.store);
         const store = resolved.store;
         const productsToCheck = [
           ...cart,
@@ -446,11 +512,16 @@ export function StoreProvider({ children }) {
       cartSavings: Math.max(cartMrpTotal - cartTotal, 0),
       cartTotal,
       customer,
+      detectNearbyStore,
+      locationBootstrapped,
+      lookupByPincode,
+      lookupNearbyStore,
       orders,
       pincode,
       ready,
       refreshCustomer,
       removeFromCart,
+      resolveByPincode,
       selectStore,
       setStoreVerified,
       setAddresses,
@@ -469,11 +540,16 @@ export function StoreProvider({ children }) {
     authReady,
     cart,
     customer,
+    detectNearbyStore,
+    locationBootstrapped,
+    lookupByPincode,
+    lookupNearbyStore,
     orders,
     pincode,
     ready,
     removeFromCart,
     refreshCustomer,
+    resolveByPincode,
     selectStore,
     storeVerified,
     toggleWishlist,

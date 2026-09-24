@@ -11,12 +11,12 @@ import {
 
 export async function GET() {
   const user = await getCurrentUser();
-  return NextResponse.json(
-    user
-      ? { success: true, data: { user } }
-      : { success: false, message: "Authentication required" },
-    { status: user ? 200 : 401 },
-  );
+  // Guest session checks return 200 with user:null so the browser
+  // does not treat "not logged in" as a failed request.
+  return NextResponse.json({
+    success: true,
+    data: { user: user || null },
+  });
 }
 
 export async function PATCH(request) {

@@ -1,7 +1,10 @@
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import "./storefront.css";
+import "./shop.css";
 import { StoreProvider } from "@/context/StoreContext";
+import { CartSessionProvider } from "@/context/CartSessionContext";
+import MobileBottomNav from "@/components/MobileBottomNav";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -29,7 +32,14 @@ export default function RootLayout({ children }) {
       data-scroll-behavior="smooth"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col"><StoreProvider>{children}</StoreProvider></body>
+      <body className="min-h-full flex flex-col bz-app-body">
+        <StoreProvider>
+          <CartSessionProvider>
+            {children}
+            <MobileBottomNav />
+          </CartSessionProvider>
+        </StoreProvider>
+      </body>
     </html>
   );
 }

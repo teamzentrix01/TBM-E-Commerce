@@ -107,11 +107,50 @@ async function enrichProducts(payload, pathArray, storeId) {
           Number(record.stock || 0) -
             Number(reservedByProduct.get(Number(record.id)) || 0),
         );
+        const syncImages = Array.isArray(record.images)
+          ? record.images
+              .map((img) => ({
+                url: typeof img === "string" ? img : img?.url,
+                sort_order: Number(img?.sort_order || 0),
+                is_primary: Boolean(img?.is_primary),
+              }))
+              .filter((img) => img.url)
+          : [];
+        const primaryOverride = local?.image_url || null;
+        let images =
+          syncImages.length > 0
+            ? syncImages
+            : record.image_url
+              ? [
+                  {
+                    url: record.image_url,
+                    sort_order: 1,
+                    is_primary: true,
+                  },
+                ]
+              : [];
+        if (primaryOverride) {
+          images = [
+            {
+              url: primaryOverride,
+              sort_order: 1,
+              is_primary: true,
+            },
+            ...images
+              .filter((img) => img.url !== primaryOverride)
+              .map((img, index) => ({
+                ...img,
+                sort_order: index + 2,
+                is_primary: false,
+              })),
+          ];
+        }
         return {
           ...record,
           stock,
           in_stock: stock > 0,
-          image_url: local?.image_url || record.image_url,
+          image_url: images[0]?.url || record.image_url || null,
+          images,
           description:
             local?.description || record.description || null,
         };
@@ -130,9 +169,47 @@ async function enrichProducts(payload, pathArray, storeId) {
       );
       const local = dbResult.rows[0];
       if (local) {
-        product.image_url = local.image_url || product.image_url;
         product.description = local.description || product.description;
       }
+      const syncImages = Array.isArray(product.images)
+        ? product.images
+            .map((img) => ({
+              url: typeof img === "string" ? img : img?.url,
+              sort_order: Number(img?.sort_order || 0),
+              is_primary: Boolean(img?.is_primary),
+            }))
+            .filter((img) => img.url)
+        : [];
+      let images =
+        syncImages.length > 0
+          ? syncImages
+          : product.image_url
+            ? [
+                {
+                  url: product.image_url,
+                  sort_order: 1,
+                  is_primary: true,
+                },
+              ]
+            : [];
+      if (local?.image_url) {
+        images = [
+          {
+            url: local.image_url,
+            sort_order: 1,
+            is_primary: true,
+          },
+          ...images
+            .filter((img) => img.url !== local.image_url)
+            .map((img, index) => ({
+              ...img,
+              sort_order: index + 2,
+              is_primary: false,
+            })),
+        ];
+      }
+      product.images = images;
+      product.image_url = images[0]?.url || product.image_url || null;
     }
     if (storeId && product?.id) {
       const reservationResult = await query(

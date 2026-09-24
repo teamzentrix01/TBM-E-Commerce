@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Script from "next/script";
 import {
   Check,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/ecommerceApi";
 
 export default function Account() {
+  const router = useRouter();
   const [otpSent, setOtpSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -274,15 +276,16 @@ export default function Account() {
     setOtpSent(false);
     setAddresses([]);
     localStorage.removeItem("tbm-addresses");
+    router.replace("/");
   }
 
   if (loading) {
     return (
       <>
         <AppHeader />
-        <main className="route-empty">
-          <UserRound />
-          <h1>Loading your account...</h1>
+        <main className="bz-shell bz-empty">
+          <UserRound size={42} />
+          <h2>Loading your account…</h2>
         </main>
         <PageFooter />
       </>
@@ -293,40 +296,53 @@ export default function Account() {
     return (
       <>
         <AppHeader />
-        <main className="login-shell">
-          <section className="login-panel">
-            <span>THE BUYZAAR MART</span>
+        <main className="bz-shell bz-login-page">
+          <section className="bz-login-card">
+            <span className="bz-eyebrow">THE BUYZAAR MART</span>
             <h1>Login or sign up</h1>
-            <p>Enter your mobile number to receive a secure OTP.</p>
-            <form onSubmit={handleLogin} className="login-form">
-              <div className="phone-row">
-                <b>+91</b>
-                <input
-                  autoFocus
-                  inputMode="numeric"
-                  maxLength={10}
-                  disabled={otpSent}
-                  value={phone}
-                  onChange={(event) =>
-                    setPhone(event.target.value.replace(/\D/g, ""))
-                  }
-                  placeholder="Mobile number"
-                />
-              </div>
+            <p className="bz-muted">
+              Enter your mobile number to receive a secure OTP.
+            </p>
+            <form onSubmit={handleLogin} className="bz-login-form">
+              <label>
+                Mobile number
+                <div className="bz-phone-row">
+                  <b>+91</b>
+                  <input
+                    autoFocus
+                    inputMode="numeric"
+                    maxLength={10}
+                    disabled={otpSent}
+                    value={phone}
+                    onChange={(event) =>
+                      setPhone(event.target.value.replace(/\D/g, ""))
+                    }
+                    placeholder="10 digit mobile"
+                  />
+                </div>
+              </label>
               {otpSent && (
-                <input
-                  autoFocus
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(event) =>
-                    setOtp(event.target.value.replace(/\D/g, ""))
-                  }
-                  placeholder="Enter 6 digit OTP"
-                />
+                <label>
+                  OTP
+                  <input
+                    autoFocus
+                    inputMode="numeric"
+                    maxLength={6}
+                    value={otp}
+                    onChange={(event) =>
+                      setOtp(event.target.value.replace(/\D/g, ""))
+                    }
+                    placeholder="Enter 6 digit OTP"
+                  />
+                </label>
               )}
-              {error && <p className="form-error">{error}</p>}
+              {error && (
+                <p className="bz-error" role="alert">
+                  {error}
+                </p>
+              )}
               <button
+                className="bz-button bz-full"
                 disabled={
                   submitting ||
                   phone.length !== 10 ||
@@ -334,15 +350,15 @@ export default function Account() {
                 }
               >
                 {submitting
-                  ? "Please wait..."
+                  ? "Please wait…"
                   : otpSent
                     ? "Verify OTP"
-                    : "Login/Sign up"}
+                    : "Continue"}
               </button>
               {otpSent && (
                 <button
                   type="button"
-                  className="secondary-action"
+                  className="bz-text-button"
                   onClick={() => {
                     setOtpSent(false);
                     setOtp("");
@@ -353,29 +369,22 @@ export default function Account() {
                 </button>
               )}
             </form>
-            <small>
-              By signing up you agree to our <Link href="/">terms and conditions</Link>.
+            <small className="bz-login-legal">
+              By continuing you agree to our{" "}
+              <Link href="/">terms and conditions</Link>.
             </small>
-            <div className="login-or">
-              <span>or</span>
-            </div>
-            <div className="google-login-container">
+            <div className="bz-login-or">or</div>
+            <div className="bz-google-login">
               <div id="google-signin-btn"></div>
               {!googleButtonReady && (
                 <button
-                  className="google-login-fallback"
+                  className="bz-button bz-button-light bz-full"
                   type="button"
                   onClick={() => {
                     initGoogleSignIn();
                     window.google?.accounts.id.prompt();
                   }}
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24">
-                    <path fill="#4285f4" d="M21.6 12.2c0-.7-.1-1.5-.2-2.2H12v4h5.4a4.6 4.6 0 0 1-2 3v2.6h3.3c1.9-1.8 2.9-4.4 2.9-7.4Z"/>
-                    <path fill="#34a853" d="M12 22c2.7 0 5-.9 6.7-2.4L15.4 17c-.9.6-2.1 1-3.4 1-2.6 0-4.8-1.8-5.6-4.2H3v2.7A10 10 0 0 0 12 22Z"/>
-                    <path fill="#fbbc05" d="M6.4 13.8A6 6 0 0 1 6 12c0-.6.1-1.2.4-1.8V7.5H3A10 10 0 0 0 2 12c0 1.6.4 3.1 1 4.5l3.4-2.7Z"/>
-                    <path fill="#ea4335" d="M12 6c1.5 0 2.8.5 3.9 1.5l2.9-2.9A9.8 9.8 0 0 0 3 7.5l3.4 2.7C7.2 7.8 9.4 6 12 6Z"/>
-                  </svg>
                   Continue with Google
                 </button>
               )}
@@ -396,89 +405,168 @@ export default function Account() {
   return (
     <>
       <AppHeader />
-      <main className="route-page modern-account-page">
-        <div className="modern-account-heading">
-          <span>YOUR PROFILE</span>
-          <h1>My account</h1>
-          <p>Everything about your profile, orders and deliveries in one place.</p>
+      <main className="bz-shell bz-account-page">
+        <div className="bz-page-heading">
+          <div>
+            <span className="bz-eyebrow">YOUR PROFILE</span>
+            <h1>My account</h1>
+            <p className="bz-muted">
+              Profile, orders and deliveries in one place.
+            </p>
+          </div>
         </div>
 
-        <section className="modern-profile-hero">
-          <div className="modern-profile-avatar">
+        <section className="bz-profile-hero">
+          <div className="bz-profile-avatar">
             {profile.image_url ? (
-              <img src={profile.image_url} alt={displayName} referrerPolicy="no-referrer" />
+              <img
+                src={profile.image_url}
+                alt={displayName}
+                referrerPolicy="no-referrer"
+              />
             ) : (
               <span>{displayName.slice(0, 1).toUpperCase()}</span>
             )}
           </div>
-          <div className="modern-profile-copy">
+          <div className="bz-profile-copy">
             <small>WELCOME BACK</small>
             <h2>{displayName}</h2>
             <p>{displayEmail}</p>
-            <div>
-              <span><Phone /> {displayPhone}</span>
-              <span><ShieldCheck /> Verified account</span>
+            <div className="bz-profile-meta">
+              <span>
+                <Phone size={14} /> {displayPhone}
+              </span>
+              <span className="bz-green">
+                <ShieldCheck size={14} /> Verified
+              </span>
             </div>
           </div>
-          <div className="modern-profile-actions">
-            <button type="button" className="edit" onClick={focusProfileForm}>
-              <Pencil /> Edit profile
+          <div className="bz-profile-actions">
+            <button
+              type="button"
+              className="bz-button bz-button-light"
+              onClick={focusProfileForm}
+            >
+              <Pencil size={16} /> Edit profile
             </button>
-            <button type="button" className="logout" onClick={logout}>
-              <LogOut /> Logout
+            <button
+              type="button"
+              className="bz-button bz-button-light"
+              onClick={logout}
+            >
+              <LogOut size={16} /> Logout
             </button>
           </div>
         </section>
 
-        <section className="modern-account-shortcuts" aria-label="Account shortcuts">
+        <section className="bz-account-shortcuts" aria-label="Account shortcuts">
           <Link href="/orders">
-            <span><History /></span>
-            <div><b>My orders</b><small>Track and review purchases</small></div>
-            <ArrowRight />
+            <span>
+              <History size={20} />
+            </span>
+            <div>
+              <b>My orders</b>
+              <small>Track and review purchases</small>
+            </div>
+            <ArrowRight size={18} />
           </Link>
           <button type="button" onClick={() => setAddressManagerOpen(true)}>
-            <span><MapPin /></span>
-            <div><b>Saved addresses</b><small>{addresses.length} saved for delivery</small></div>
-            <ArrowRight />
+            <span>
+              <MapPin size={20} />
+            </span>
+            <div>
+              <b>Saved addresses</b>
+              <small>{addresses.length} saved for delivery</small>
+            </div>
+            <ArrowRight size={18} />
           </button>
-          <Link href="/checkout">
-            <span><CreditCard /></span>
-            <div><b>Cart & checkout</b><small>Review payment and delivery</small></div>
-            <ArrowRight />
+          <Link href="/cart">
+            <span>
+              <CreditCard size={20} />
+            </span>
+            <div>
+              <b>Cart & checkout</b>
+              <small>Review payment and delivery</small>
+            </div>
+            <ArrowRight size={18} />
           </Link>
           <button type="button" onClick={() => setSupportOpen(true)}>
-            <span><Phone /></span>
-            <div><b>Help & support</b><small>We are here to help</small></div>
-            <ArrowRight />
+            <span>
+              <Phone size={20} />
+            </span>
+            <div>
+              <b>Help & support</b>
+              <small>We are here to help</small>
+            </div>
+            <ArrowRight size={18} />
           </button>
         </section>
 
-        <section className="modern-account-details">
+        <section className="bz-account-details">
           <header>
             <div>
-              <small>PERSONAL INFORMATION</small>
+              <span className="bz-eyebrow">PERSONAL INFORMATION</span>
               <h2>Your details</h2>
             </div>
-            <button type="button" onClick={focusProfileForm}><Pencil /> Edit</button>
+            <button
+              type="button"
+              className="bz-text-button"
+              onClick={focusProfileForm}
+            >
+              <Pencil size={15} /> Edit
+            </button>
           </header>
-          <div className="modern-account-detail-grid">
-            <div><span><UserRound /></span><small>Full name</small><b>{displayName}</b></div>
-            <div><span><Mail /></span><small>Email address</small><b>{displayEmail}</b></div>
-            <div><span><Phone /></span><small>Mobile number</small><b>{displayPhone}</b></div>
-            <div><span><MapPin /></span><small>Saved addresses</small><b>{addresses.length}</b></div>
+          <div className="bz-account-detail-grid">
+            <div>
+              <span>
+                <UserRound size={18} />
+              </span>
+              <small>Full name</small>
+              <b>{displayName}</b>
+            </div>
+            <div>
+              <span>
+                <Mail size={18} />
+              </span>
+              <small>Email address</small>
+              <b>{displayEmail}</b>
+            </div>
+            <div>
+              <span>
+                <Phone size={18} />
+              </span>
+              <small>Mobile number</small>
+              <b>{displayPhone}</b>
+            </div>
+            <div>
+              <span>
+                <MapPin size={18} />
+              </span>
+              <small>Saved addresses</small>
+              <b>{addresses.length}</b>
+            </div>
           </div>
         </section>
 
         {profileEditOpen && (
-          <form id="profile-edit-form" className="profile-form modern-profile-form" onSubmit={saveProfile}>
-            <div className="modern-profile-form-head">
-              <span><UserRound /></span>
+          <form
+            id="profile-edit-form"
+            className="bz-profile-form"
+            onSubmit={saveProfile}
+          >
+            <div className="bz-section-heading">
               <div>
-                <small>EDIT PROFILE</small>
+                <span className="bz-eyebrow">EDIT PROFILE</span>
                 <h2>Update your details</h2>
-                <p>Changes update your checkout details automatically.</p>
               </div>
-              <button type="button" aria-label="Close edit profile" onClick={() => setProfileEditOpen(false)}><X /></button>
+              <button
+                type="button"
+                className="bz-icon-button"
+                aria-label="Close edit profile"
+                onClick={() => setProfileEditOpen(false)}
+              >
+                <X size={18} />
+              </button>
             </div>
             <label>
               Full name
@@ -486,7 +574,9 @@ export default function Account() {
                 id="profile-name-input"
                 required
                 value={profile.name}
-                onChange={(event) => setProfile({ ...profile, name: event.target.value })}
+                onChange={(event) =>
+                  setProfile({ ...profile, name: event.target.value })
+                }
               />
             </label>
             <label>
@@ -495,7 +585,9 @@ export default function Account() {
                 inputMode="numeric"
                 maxLength={10}
                 value={phone}
-                onChange={(event) => setPhone(event.target.value.replace(/\D/g, ""))}
+                onChange={(event) =>
+                  setPhone(event.target.value.replace(/\D/g, ""))
+                }
                 placeholder="Add mobile number"
               />
             </label>
@@ -504,116 +596,176 @@ export default function Account() {
               <input
                 type="email"
                 value={profile.email}
-                onChange={(event) => setProfile({ ...profile, email: event.target.value })}
+                onChange={(event) =>
+                  setProfile({ ...profile, email: event.target.value })
+                }
                 placeholder="you@example.com"
               />
             </label>
-            {error && <p className="form-error">{error}</p>}
-            <div className="modern-profile-form-actions">
-              <button type="button" onClick={() => setProfileEditOpen(false)}>Cancel</button>
-              <button type="submit" className="primary-action" disabled={submitting}>
-                {submitting ? "Saving..." : "Save changes"}
+            {error && (
+              <p className="bz-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="bz-form-actions">
+              <button
+                type="button"
+                className="bz-button bz-button-light"
+                onClick={() => setProfileEditOpen(false)}
+              >
+                Cancel
+              </button>
+              <button className="bz-button" disabled={submitting}>
+                {submitting ? "Saving…" : "Save changes"}
               </button>
             </div>
-            {saved && <p className="success-message"><Check /> Profile saved</p>}
+            {saved && (
+              <p className="bz-green">
+                <Check size={16} /> Profile saved
+              </p>
+            )}
           </form>
         )}
       </main>
       <PageFooter />
 
       {addressManagerOpen && (
-        <div className="modal-backdrop" onMouseDown={() => setAddressManagerOpen(false)}>
-          <div className="account-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="account-modal-header">
-              <h2>Saved Addresses</h2>
-              <button className="account-modal-close" onClick={() => setAddressManagerOpen(false)}>
-                <X />
+        <div
+          className="bz-modal-backdrop"
+          onMouseDown={() => setAddressManagerOpen(false)}
+        >
+          <div
+            className="bz-account-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="bz-section-heading">
+              <h2>Saved addresses</h2>
+              <button
+                className="bz-icon-button"
+                aria-label="Close"
+                onClick={() => setAddressManagerOpen(false)}
+              >
+                <X size={18} />
               </button>
             </div>
-            
+
             {!showAddressForm ? (
               <>
-                <div className="address-manager-list">
+                <div className="bz-address-manager-list">
                   {addresses.length === 0 ? (
-                    <p style={{ textAlign: "center", color: "#64748b", fontSize: "13px", padding: "20px 0" }}>
-                      No saved addresses yet.
-                    </p>
+                    <p className="bz-muted">No saved addresses yet.</p>
                   ) : (
                     addresses.map((item, index) => (
-                      <div className="address-manager-card" key={index}>
+                      <div className="bz-address-manager-card" key={index}>
                         <b>{item.name}</b>
-                        <span>{item.line}, {item.city} - {item.pincode}</span>
+                        <span>
+                          {item.line}, {item.city} - {item.pincode}
+                        </span>
                         <span>Phone: {item.phone}</span>
-                        <div className="address-manager-card-actions">
-                          <button onClick={() => handleDeleteAddress(index)}>Delete</button>
-                        </div>
+                        <button
+                          type="button"
+                          className="bz-text-button"
+                          onClick={() => handleDeleteAddress(index)}
+                        >
+                          Delete
+                        </button>
                       </div>
                     ))
                   )}
                 </div>
-                <button className="address-manager-add-btn" onClick={() => setShowAddressForm(true)}>
-                  <Plus size={16} /> Add New Address
+                <button
+                  className="bz-button bz-full"
+                  type="button"
+                  onClick={() => setShowAddressForm(true)}
+                >
+                  <Plus size={16} /> Add new address
                 </button>
               </>
             ) : (
-              <form onSubmit={handleAddAddress} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div className="address-form-fields">
-                  <label className="full-width">
-                    Receiver's Full Name
-                    <input
-                      required
-                      value={addressForm.name}
-                      onChange={(e) => setAddressForm({ ...addressForm, name: e.target.value })}
-                      placeholder="e.g. John Doe"
-                    />
-                  </label>
-                  <label>
-                    Phone Number
-                    <input
-                      required
-                      type="tel"
-                      maxLength={10}
-                      value={addressForm.phone}
-                      onChange={(e) => setAddressForm({ ...addressForm, phone: e.target.value.replace(/\D/g, "") })}
-                      placeholder="10-digit mobile"
-                    />
-                  </label>
-                  <label>
-                    Pincode
-                    <input
-                      required
-                      maxLength={6}
-                      value={addressForm.pincode}
-                      onChange={(e) => setAddressForm({ ...addressForm, pincode: e.target.value.replace(/\D/g, "") })}
-                      placeholder="6-digit pincode"
-                    />
-                  </label>
-                  <label className="full-width">
-                    Flat, House no., Building, Company, Apartment, Street
-                    <input
-                      required
-                      value={addressForm.line}
-                      onChange={(e) => setAddressForm({ ...addressForm, line: e.target.value })}
-                      placeholder="e.g. Sector 62, Landmark area"
-                    />
-                  </label>
-                  <label className="full-width">
-                    Town/City
-                    <input
-                      required
-                      value={addressForm.city}
-                      onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })}
-                      placeholder="e.g. Noida"
-                    />
-                  </label>
-                </div>
-                {addressFormError && <p className="form-error" style={{ fontSize: "11px", margin: 0 }}>{addressFormError}</p>}
-                <div className="address-form-actions">
-                  <button type="button" className="cancel-btn" onClick={() => { setShowAddressForm(false); setAddressFormError(""); }}>
+              <form
+                className="bz-address-form"
+                onSubmit={handleAddAddress}
+              >
+                <label className="bz-form-wide">
+                  Receiver&apos;s full name
+                  <input
+                    required
+                    value={addressForm.name}
+                    onChange={(e) =>
+                      setAddressForm({ ...addressForm, name: e.target.value })
+                    }
+                    placeholder="Full name"
+                  />
+                </label>
+                <label>
+                  Phone number
+                  <input
+                    required
+                    type="tel"
+                    maxLength={10}
+                    value={addressForm.phone}
+                    onChange={(e) =>
+                      setAddressForm({
+                        ...addressForm,
+                        phone: e.target.value.replace(/\D/g, ""),
+                      })
+                    }
+                    placeholder="10-digit mobile"
+                  />
+                </label>
+                <label>
+                  Pincode
+                  <input
+                    required
+                    maxLength={6}
+                    value={addressForm.pincode}
+                    onChange={(e) =>
+                      setAddressForm({
+                        ...addressForm,
+                        pincode: e.target.value.replace(/\D/g, ""),
+                      })
+                    }
+                    placeholder="6-digit pincode"
+                  />
+                </label>
+                <label className="bz-form-wide">
+                  House, street, landmark
+                  <input
+                    required
+                    value={addressForm.line}
+                    onChange={(e) =>
+                      setAddressForm({ ...addressForm, line: e.target.value })
+                    }
+                    placeholder="Complete address"
+                  />
+                </label>
+                <label className="bz-form-wide">
+                  City
+                  <input
+                    required
+                    value={addressForm.city}
+                    onChange={(e) =>
+                      setAddressForm({ ...addressForm, city: e.target.value })
+                    }
+                    placeholder="City"
+                  />
+                </label>
+                {addressFormError && (
+                  <p className="bz-error">{addressFormError}</p>
+                )}
+                <div className="bz-form-actions">
+                  <button
+                    type="button"
+                    className="bz-button bz-button-light"
+                    onClick={() => {
+                      setShowAddressForm(false);
+                      setAddressFormError("");
+                    }}
+                  >
                     Cancel
                   </button>
-                  <button type="submit" className="save-btn">
-                    Save Address
+                  <button type="submit" className="bz-button">
+                    Save address
                   </button>
                 </div>
               </form>
@@ -623,53 +775,54 @@ export default function Account() {
       )}
 
       {supportOpen && (
-        <div className="modal-backdrop" onMouseDown={() => setSupportOpen(false)}>
-          <div className="account-modal support-modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="account-modal-header">
-              <h2>Customer Support</h2>
-              <button className="account-modal-close" onClick={() => setSupportOpen(false)}>
-                <X />
+        <div
+          className="bz-modal-backdrop"
+          onMouseDown={() => setSupportOpen(false)}
+        >
+          <div
+            className="bz-account-modal"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="bz-section-heading">
+              <h2>Customer support</h2>
+              <button
+                className="bz-icon-button"
+                aria-label="Close"
+                onClick={() => setSupportOpen(false)}
+              >
+                <X size={18} />
               </button>
             </div>
-            <p style={{ fontSize: "13px", color: "#475569", margin: 0 }}>
-              Get help with your orders, refunds, payments or store availability.
+            <p className="bz-muted">
+              Get help with orders, refunds, payments or store availability.
             </p>
-            <div className="account-support-options support-contact-list">
-              <a
-                href="mailto:info@thebuyzaarmart.com"
-                className="account-support-btn"
-              >
-                <span className="support-icon"><Mail /></span>
+            <div className="bz-support-list">
+              <a href="mailto:info@thebuyzaarmart.com">
+                <Mail size={18} />
                 <span>
-                  <b>Email Us:</b>
-                  <strong>info@thebuyzaarmart.com</strong>
-                  <small>We'll respond within 24 hours</small>
+                  <b>Email</b>
+                  <small>info@thebuyzaarmart.com</small>
                 </span>
               </a>
-              <a
-                href="tel:+919217991727"
-                className="account-support-btn"
-              >
-                <span className="support-icon"><Phone /></span>
+              <a href="tel:+919217991727">
+                <Phone size={18} />
                 <span>
-                  <b>Call Us:</b>
-                  <strong>9217991727</strong>
+                  <b>Call</b>
+                  <small>9217991727</small>
                 </span>
               </a>
-              <div className="account-support-btn">
-                <span className="support-icon"><MapPin /></span>
+              <div>
+                <MapPin size={18} />
                 <span>
-                  <b>Visit Our Office</b>
-                  <strong>D-43, Third floor</strong>
-                  <strong>Sector-6, Noida-201301</strong>
+                  <b>Office</b>
+                  <small>D-43, Third floor, Sector-6, Noida-201301</small>
                 </span>
               </div>
-              <div className="account-support-btn">
-                <span className="support-icon"><Clock3 /></span>
+              <div>
+                <Clock3 size={18} />
                 <span>
-                  <b>Business Hours</b>
-                  <strong>Monday - Saturday: 9:00 AM - 7:00 PM</strong>
-                  <small>Closed on Sundays</small>
+                  <b>Hours</b>
+                  <small>Mon–Sat 9:00 AM – 7:00 PM</small>
                 </span>
               </div>
             </div>
