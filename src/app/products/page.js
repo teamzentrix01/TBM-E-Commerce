@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Coffee,
+  ChevronRight,
   Grid2X2,
   House,
   Leaf,
@@ -50,7 +51,6 @@ function Results({ store, query, category, subcategory, brand, sort, attempt }) 
   const [products, setProducts] = useState([]);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalResults, setTotalResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -93,7 +93,6 @@ function Results({ store, query, category, subcategory, brand, sort, attempt }) 
           ).values(),
         ]);
         setTotalPages(query ? 1 : Number(data.totalPages || 1));
-        setTotalResults(Number.isFinite(Number(data.total)) ? Number(data.total) : null);
       })
       .catch((failure) => {
         if (failure.name !== "AbortError") setError(failure.message);
@@ -105,16 +104,6 @@ function Results({ store, query, category, subcategory, brand, sort, attempt }) 
   }, [store.id, query, category, subcategory, brand, page, retry, attempt]);
   return (
     <>
-      <div className="bz-results-count" aria-live="polite">
-        {loading && !products.length
-          ? "Finding your local favourites…"
-          : totalResults != null
-            ? `${totalResults.toLocaleString("en-IN")} products`
-            : `${products.length.toLocaleString("en-IN")} products shown`}
-        {totalResults != null && totalResults > products.length ? (
-          <span>Showing {products.length.toLocaleString("en-IN")} so far · sorted items shown</span>
-        ) : null}
-      </div>
       {error && (
         <ErrorState
           title="We couldn't load products"
