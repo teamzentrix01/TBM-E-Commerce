@@ -76,21 +76,34 @@ export default function Home() {
     setVisibleSavingsCount(8);
     setLoadingMore(false);
     setMoreProductsError(false);
-    Promise.all([
-      fetchProducts({
-        storeId: store.id,
-        pageSize: 24,
-        signal: controller.signal,
-      }),
-      fetchCategories(store.id),
-      fetchStorefrontBanners(store.id, { signal: controller.signal }).catch(
-        () => null,
-      ),
-      fetchStorefrontHampers(store.id, { signal: controller.signal }).catch(
-        () => null,
-      ),
-    ])
-      .then(([data, categoryData, bannerData, hamperData]) => {
+    fetchCategories(store.id)
+      .then((categoryData) => {
+        if (!cancelled) setCategories(categoryData?.records || []);
+      })
+      .catch(() => {});
+    fetchStorefrontBanners(store.id, { signal: controller.signal })
+      .then((bannerData) => {
+        if (!cancelled) setBanners(resolveHomeBanners(bannerData));
+      })
+      .catch(() => {
+        if (!cancelled) setBanners(resolveHomeBanners(null));
+      });
+    fetchStorefrontHampers(store.id, { signal: controller.signal })
+      .then((hamperData) => {
+        if (cancelled) return;
+        setReadyPacks(
+          (hamperData?.packs || []).filter(
+            (pack) => pack.kind === "ready" || !pack.kind || pack.kind === "occasion",
+          ),
+        );
+      })
+      .catch(() => {});
+    fetchProducts({
+      storeId: store.id,
+      pageSize: 24,
+      signal: controller.signal,
+    })
+      .then((data) => {
         if (cancelled) return;
         setProducts(
           (data.records || []).map((product) => ({
@@ -102,13 +115,6 @@ export default function Home() {
         setHasMoreProducts(Number(data.totalPages || 1) > 1);
         setVisibleSavingsCount(8);
         setMoreProductsError(false);
-        setCategories(categoryData.records || []);
-        setBanners(resolveHomeBanners(bannerData));
-        setReadyPacks(
-          (hamperData?.packs || []).filter(
-            (pack) => pack.kind === "ready" || !pack.kind || pack.kind === "occasion",
-          ),
-        );
       })
       .catch((failure) => {
         if (!cancelled && failure.name !== "AbortError")

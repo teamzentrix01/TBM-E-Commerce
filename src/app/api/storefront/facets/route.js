@@ -4,27 +4,23 @@ import { isPublicLabel } from "@/lib/shop.mjs";
 const SYNC_BASE_URL = (
   process.env.SYNC_PUBLIC_API_BASE_URL || "https://sync.thebuyzaarmart.com"
 ).replace(/\/$/, "");
-const PAGE_SIZE = 60;
-const CACHE_TTL_MS = 10 * 60 * 1000;
-const facetCache = new Map();
+const FRESH_TTL_MS = 5 * 60 * 1000;
+const STALE_TTL_MS = 60 * 60 * 1000;
 
-function addFacet(map, id, name) {
-  if (!id || !isPublicLabel(name)) return;
-  const key = String(id);
-  const current = map.get(key);
-  map.set(key, {
-    id: Number(id),
-    name: String(name).trim(),
-    product_count: (current?.product_count || 0) + 1,
-  });
+const globalForFacets = globalThis;
+if (!globalForFacets._storefrontFacetCache) {
+  globalForFacets._storefrontFacetCache = new Map();
+}
+const facetCache = globalForFacets._storefrontFacetCache;
+const inFlight = new Map();
+
+function publicOnly(list) {
+  return (Array.isArray(list) ? list : []).filter((item) => item?.id && isPublicLabel(item.name));
 }
 
-async function fetchProductPage(storeId, page) {
-  const url = new URL(`${SYNC_BASE_URL}/api/public/products`);
+async function loadFacets(storeId) {
+  const url = new URL(`${SYNC_BASE_URL}/api/public/facets`);
   url.searchParams.set("store_id", String(storeId));
-  url.searchParams.set("page", String(page));
-  url.searchParams.set("pageSize", String(PAGE_SIZE));
-
   const response = await fetch(url, {
     headers: { accept: "application/json" },
     cache: "no-store",
@@ -33,52 +29,37 @@ async function fetchProductPage(storeId, page) {
   if (!response.ok || payload.success === false) {
     throw new Error(payload.message || "Unable to load catalog facets");
   }
-  return payload.data || {};
+  const data = payload.data || {};
+  return {
+    brands: publicOnly(data.brands),
+    categories: publicOnly(data.categories),
+    subCategories: publicOnly(data.subCategories),
+    departments: publicOnly(data.departments),
+    product_count: Number(data.product_count || 0),
+    refreshed_at: data.refreshed_at || new Date().toISOString(),
+  };
 }
 
-async function loadFacets(storeId) {
-  const firstPage = await fetchProductPage(storeId, 1);
-  const totalPages = Math.min(Number(firstPage.totalPages || 1), 100);
-  const records = [...(firstPage.records || [])];
-
-  for (let start = 2; start <= totalPages; start += 6) {
-    const pageNumbers = Array.from(
-      { length: Math.min(6, totalPages - start + 1) },
-      (_, index) => start + index,
+function refresh(storeId) {
+  if (!inFlight.has(storeId)) {
+    inFlight.set(
+      storeId,
+      loadFacets(storeId)
+        .then((data) => {
+          facetCache.set(storeId, { createdAt: Date.now(), data });
+          return data;
+        })
+        .finally(() => inFlight.delete(storeId)),
     );
-    const pages = await Promise.all(
-      pageNumbers.map((page) => fetchProductPage(storeId, page)),
-    );
-    pages.forEach((page) => records.push(...(page.records || [])));
   }
+  return inFlight.get(storeId);
+}
 
-  const brands = new Map();
-  const categories = new Map();
-  const subCategories = new Map();
-  const departments = new Map();
-
-  records.forEach((product) => {
-    addFacet(brands, product.brand_id, product.brand_name);
-    addFacet(categories, product.category_id, product.category_name);
-    addFacet(
-      subCategories,
-      product.sub_category_id,
-      product.sub_category_name,
-    );
-    addFacet(departments, product.department_id, product.department_name);
-  });
-
-  const toRecords = (map) =>
-    [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-
-  return {
-    brands: toRecords(brands),
-    categories: toRecords(categories),
-    subCategories: toRecords(subCategories),
-    departments: toRecords(departments),
-    product_count: Number(firstPage.total || records.length),
-    refreshed_at: new Date().toISOString(),
-  };
+function respond(data) {
+  return NextResponse.json(
+    { success: true, data },
+    { headers: { "cache-control": "private, max-age=300" } },
+  );
 }
 
 export async function GET(request) {
@@ -93,19 +74,13 @@ export async function GET(request) {
 
   try {
     const cached = facetCache.get(storeId);
-    if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
-      return NextResponse.json(
-        { success: true, data: cached.data },
-        { headers: { "cache-control": "private, max-age=300" } },
-      );
+    const age = cached ? Date.now() - cached.createdAt : Infinity;
+    if (cached && age < FRESH_TTL_MS) return respond(cached.data);
+    if (cached && age < STALE_TTL_MS) {
+      refresh(storeId).catch((error) => console.error("[storefront facets refresh]", error));
+      return respond(cached.data);
     }
-
-    const data = await loadFacets(storeId);
-    facetCache.set(storeId, { createdAt: Date.now(), data });
-    return NextResponse.json(
-      { success: true, data },
-      { headers: { "cache-control": "private, max-age=300" } },
-    );
+    return respond(await refresh(storeId));
   } catch (error) {
     console.error("[storefront facets]", error);
     return NextResponse.json(
