@@ -56,9 +56,23 @@ export async function getClient() {
 /**
  * Ensures customer-facing data stays in the dedicated ecommerce database.
  */
-let schemaInitialized = false;
+let schemaInitialized = Boolean(globalForPg._ecomSchemaReady);
 export async function ensureEcommerceSchema() {
-  if (schemaInitialized) return;
+  if (schemaInitialized || globalForPg._ecomSchemaReady) return;
+  // Concurrent first requests must share one DDL run instead of racing each other.
+  if (!globalForPg._ecomSchemaPromise) {
+    globalForPg._ecomSchemaPromise = runEcommerceSchema()
+      .then(() => {
+        globalForPg._ecomSchemaReady = true;
+      })
+      .finally(() => {
+        globalForPg._ecomSchemaPromise = null;
+      });
+  }
+  return globalForPg._ecomSchemaPromise;
+}
+
+async function runEcommerceSchema() {
   try {
     await query(`
       CREATE TABLE IF NOT EXISTS ecommerce_products (

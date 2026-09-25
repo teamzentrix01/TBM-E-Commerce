@@ -4,32 +4,62 @@ import { useEffect, useState } from "react";
 import { useStore } from "@/context/StoreContext";
 import { fetchProducts, fetchStores, resolveStoreByPincode } from "@/lib/api";
 
+const VERIFIED_STORE_KEY = "bz-verified-store";
+const VERIFIED_STORE_TTL_MS = 10 * 60 * 1000;
+
+function readVerifiedStoreId() {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem(VERIFIED_STORE_KEY) || "null");
+    if (raw && Date.now() - raw.at < VERIFIED_STORE_TTL_MS) return String(raw.id);
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function writeVerifiedStoreId(id) {
+  try {
+    sessionStorage.setItem(VERIFIED_STORE_KEY, JSON.stringify({ id: String(id), at: Date.now() }));
+  } catch {
+    // ignore
+  }
+}
+
+async function storeHasProducts(storeId) {
+  try {
+    const data = await fetchProducts({ storeId, pageSize: 1 });
+    return (data?.records || []).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function pickStoreWithProducts(preferredStore = null) {
-  const storesPayload = await fetchStores();
-  const stores = storesPayload?.records || [];
-  if (!stores.length) return preferredStore;
-
-  const candidates = preferredStore?.id
-    ? [
-        preferredStore,
-        ...stores.filter((store) => String(store.id) !== String(preferredStore.id)),
-      ]
-    : stores;
-
-  for (const store of candidates) {
-    try {
-      const data = await fetchProducts({
-        storeId: store.id,
-        pageSize: 1,
-      });
-      if ((data?.records || []).length > 0) {
-        return store;
-      }
-    } catch {
-      // try next store
-    }
+  if (preferredStore?.id && readVerifiedStoreId() === String(preferredStore.id)) {
+    return preferredStore;
   }
 
+  // Probe the preferred store and load the store list in parallel instead of one after another.
+  const [preferredOk, storesPayload] = await Promise.all([
+    preferredStore?.id ? storeHasProducts(preferredStore.id) : Promise.resolve(false),
+    fetchStores().catch(() => null),
+  ]);
+  if (preferredOk) {
+    writeVerifiedStoreId(preferredStore.id);
+    return preferredStore;
+  }
+
+  const stores = (storesPayload?.records || []).filter(
+    (store) => String(store.id) !== String(preferredStore?.id),
+  );
+  if (!stores.length) return preferredStore;
+
+  const results = await Promise.all(stores.map((store) => storeHasProducts(store.id)));
+  const found = stores.find((_, index) => results[index]);
+  if (found) {
+    writeVerifiedStoreId(found.id);
+    return found;
+  }
   return preferredStore || stores[0] || null;
 }
 

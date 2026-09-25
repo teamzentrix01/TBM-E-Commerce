@@ -5,6 +5,46 @@ const SYNC_BASE_URL = (
   process.env.SYNC_PUBLIC_API_BASE_URL || "https://sync.thebuyzaarmart.com"
 ).replace(/\/$/, "");
 
+const CACHE_TTL_MS = {
+  stores: 5 * 60 * 1000,
+  categories: 60 * 1000,
+  "storefront-banners": 60 * 1000,
+  "storefront-hampers": 30 * 1000,
+  products: 20 * 1000,
+  search: 20 * 1000,
+};
+const MAX_CACHE_ENTRIES = 300;
+const globalForProxy = globalThis;
+if (!globalForProxy._shopProxyCache) globalForProxy._shopProxyCache = new Map();
+const proxyCache = globalForProxy._shopProxyCache;
+
+function cacheTtlFor(pathArray) {
+  if (pathArray[0] !== "api" || pathArray[1] !== "public") return 0;
+  if (pathArray[2] === "stores" && pathArray[3] === "resolve") return 0;
+  return CACHE_TTL_MS[pathArray[2]] || 0;
+}
+
+function readCache(key) {
+  const entry = proxyCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    proxyCache.delete(key);
+    return null;
+  }
+  return entry.text;
+}
+
+function writeCache(key, text, ttl) {
+  if (proxyCache.size >= MAX_CACHE_ENTRIES) {
+    proxyCache.delete(proxyCache.keys().next().value);
+  }
+  proxyCache.set(key, { text, expiresAt: Date.now() + ttl });
+}
+
+function isHostedImage(url) {
+  return typeof url === "string" && /^https?:\/\//i.test(url);
+}
+
 function buildTargetUrl(request, params) {
   const incomingUrl = new URL(request.url);
   const path = (params.path || []).join("/");
@@ -70,17 +110,19 @@ async function enrichProducts(payload, pathArray, storeId) {
       const records = payload.data.records || [];
       const barcodes = records.map((record) => record.barcode).filter(Boolean);
       const productIds = records.map((record) => Number(record.id)).filter(Boolean);
-      const dbResult = barcodes.length
-        ? await query(
-            `SELECT barcode, image_url, description
-             FROM ecommerce_products
-             WHERE barcode = ANY($1::varchar[])`,
-            [barcodes],
-          )
-        : { rows: [] };
-      const reservationResult =
+      const [dbResult, reservationResult] = await Promise.all([
+        barcodes.length
+          ? query(
+              `SELECT barcode,
+                      CASE WHEN image_url ~* '^https?://' THEN image_url END AS image_url,
+                      description
+               FROM ecommerce_products
+               WHERE barcode = ANY($1::varchar[])`,
+              [barcodes],
+            )
+          : { rows: [] },
         storeId && productIds.length
-          ? await query(
+          ? query(
               `SELECT product_id, COALESCE(SUM(qty), 0) AS reserved_qty
                FROM ecommerce_inventory_reservations
                WHERE store_id = $1
@@ -90,7 +132,8 @@ async function enrichProducts(payload, pathArray, storeId) {
                GROUP BY product_id`,
               [storeId, productIds],
             )
-          : { rows: [] };
+          : { rows: [] },
+      ]);
       const localByBarcode = new Map(
         dbResult.rows.map((row) => [row.barcode, row]),
       );
@@ -116,7 +159,7 @@ async function enrichProducts(payload, pathArray, storeId) {
               }))
               .filter((img) => img.url)
           : [];
-        const primaryOverride = local?.image_url || null;
+        const primaryOverride = isHostedImage(local?.image_url) ? local.image_url : null;
         let images =
           syncImages.length > 0
             ? syncImages
@@ -159,6 +202,18 @@ async function enrichProducts(payload, pathArray, storeId) {
     }
 
     const product = payload.data.product || payload.data;
+    const reservationPromise =
+      storeId && product?.id
+        ? query(
+            `SELECT COALESCE(SUM(qty), 0) AS reserved_qty
+             FROM ecommerce_inventory_reservations
+             WHERE store_id = $1
+               AND product_id = $2
+               AND status = 'active'
+               AND (expires_at IS NULL OR expires_at > NOW())`,
+            [storeId, product.id],
+          )
+        : null;
     if (product?.barcode) {
       const dbResult = await query(
         `SELECT image_url, description
@@ -211,16 +266,8 @@ async function enrichProducts(payload, pathArray, storeId) {
       product.images = images;
       product.image_url = images[0]?.url || product.image_url || null;
     }
-    if (storeId && product?.id) {
-      const reservationResult = await query(
-        `SELECT COALESCE(SUM(qty), 0) AS reserved_qty
-         FROM ecommerce_inventory_reservations
-         WHERE store_id = $1
-           AND product_id = $2
-           AND status = 'active'
-           AND (expires_at IS NULL OR expires_at > NOW())`,
-        [storeId, product.id],
-      );
+    if (reservationPromise) {
+      const reservationResult = await reservationPromise;
       product.stock = Math.max(
         0,
         Number(product.stock || 0) -
@@ -239,25 +286,34 @@ export async function GET(request, context) {
     const params = await context.params;
     const pathArray = params.path || [];
     const targetUrl = buildTargetUrl(request, params);
+    const cacheKey = targetUrl.toString();
+    const cacheTtl = cacheTtlFor(pathArray);
 
-    const response = await fetch(targetUrl, {
-      method: request.method,
-      headers: { accept: "application/json" },
-      cache: "no-store",
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      return new NextResponse(body, {
-        status: response.status,
-        headers: {
-          "content-type": response.headers.get("content-type") || "application/json",
-          "cache-control": "no-store",
-        },
+    let payloadText = cacheTtl ? readCache(cacheKey) : null;
+    let upstreamStatus = 200;
+    if (payloadText == null) {
+      const response = await fetch(targetUrl, {
+        method: request.method,
+        headers: { accept: "application/json" },
+        cache: "no-store",
       });
-    }
 
-    const payloadText = await response.text();
+      if (!response.ok) {
+        const body = await response.text();
+        return new NextResponse(body, {
+          status: response.status,
+          headers: {
+            "content-type": response.headers.get("content-type") || "application/json",
+            "cache-control": "no-store",
+          },
+        });
+      }
+
+      payloadText = await response.text();
+      upstreamStatus = response.status;
+      if (cacheTtl) writeCache(cacheKey, payloadText, cacheTtl);
+    }
+    const response = { status: upstreamStatus, headers: new Headers({ "content-type": "application/json" }) };
     let jsonPayload;
     try {
       jsonPayload = JSON.parse(payloadText);
