@@ -682,6 +682,15 @@ body {
 .bz-save.is-saved {
   color: var(--bz-red);
 }
+.bz-save.is-saving {
+  animation: bz-save-pop 420ms cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+@keyframes bz-save-pop {
+  0% { transform: scale(1); }
+  42% { transform: scale(1.22) rotate(-6deg); }
+  72% { transform: scale(0.94) rotate(3deg); }
+  100% { transform: scale(1) rotate(0); }
+}
 .bz-discount {
   display: inline-block;
   background: #e8f6e4;
@@ -5524,6 +5533,10 @@ a.bz-detail-brand:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .bz-save.is-saving {
+    animation: none;
+  }
+
   .bz-image-placeholder {
     animation: none;
   }

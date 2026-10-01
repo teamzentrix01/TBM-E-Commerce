@@ -371,13 +371,19 @@ export function AddToCart({ product, compact = false }) {
 
 export function SaveProduct({ product }) {
   const { wishlist, toggleWishlist } = useStore();
+  const [justSaved, setJustSaved] = useState(false);
   const saved = wishlist.some((item) => String(item.id) === String(product.id));
   return (
     <button
-      className={`bz-save ${saved ? "is-saved" : ""}`}
+      type="button"
+      className={`bz-save ${saved ? "is-saved" : ""}${justSaved ? " is-saving" : ""}`}
       aria-label={`${saved ? "Remove" : "Save"} ${product.name}${saved ? " from wishlist" : " to wishlist"}`}
       aria-pressed={saved}
-      onClick={() => toggleWishlist(product)}
+      onClick={() => {
+        const willSave = !saved;
+        setJustSaved(willSave);
+        toggleWishlist(product);
+      }}
     >
       <Heart size={18} fill={saved ? "currentColor" : "none"} />
     </button>

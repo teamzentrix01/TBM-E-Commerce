@@ -24,13 +24,15 @@ const TABS = [
     label: "Saved",
     icon: Heart,
     match: (path) => path.startsWith("/wishlist"),
+    showBadge: true,
   },
   {
     href: "/cart",
     label: "Cart",
     icon: ShoppingCart,
     match: (path) => path.startsWith("/cart"),
-    badge: true,
+    cartTarget: true,
+    showBadge: true,
   },
   {
     href: "/account",
@@ -46,14 +48,15 @@ const TABS = [
 
 export default function MobileBottomNav() {
   const pathname = usePathname();
-  const { cartCount } = useStore();
+  const { cartCount, wishlist } = useStore();
   if (pathname?.startsWith("/admin") || pathname?.startsWith("/checkout")) {
     return null;
   }
   return (
     <nav className="bz-bottom-nav" aria-label="Primary">
-      {TABS.map(({ href, label, icon: Icon, match, badge }) => {
+      {TABS.map(({ href, label, icon: Icon, match, cartTarget, showBadge }) => {
         const active = match(pathname || "/");
+        const count = href === "/cart" ? cartCount : wishlist.length;
         return (
           <Link
             key={href}
@@ -63,10 +66,10 @@ export default function MobileBottomNav() {
           >
             <span
               className="bz-bottom-nav-icon"
-              data-cart-target={badge ? "mobile" : undefined}
+              data-cart-target={cartTarget ? "mobile" : undefined}
             >
               <Icon size={22} strokeWidth={active ? 2.4 : 2} />
-              {badge && cartCount > 0 && <em>{cartCount > 99 ? "99+" : cartCount}</em>}
+              {showBadge && count > 0 && <em>{count > 99 ? "99+" : count}</em>}
             </span>
             <small>{label}</small>
           </Link>
