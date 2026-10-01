@@ -816,6 +816,14 @@ a.bz-product-brand:hover {
   color: var(--bz-red);
   overflow: hidden;
 }
+.bz-quantity.is-quantity-entering {
+  animation: bz-quantity-enter 460ms cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+@keyframes bz-quantity-enter {
+  0% { transform: scale(0.88); opacity: 0.5; }
+  55% { transform: scale(1.04); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
 .bz-product-card .bz-quantity {
   border-color: #b9d4bf;
   background: #f4faf5;
@@ -5533,7 +5541,8 @@ a.bz-detail-brand:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bz-save.is-saving {
+  .bz-save.is-saving,
+  .bz-quantity.is-quantity-entering {
     animation: none;
   }
 

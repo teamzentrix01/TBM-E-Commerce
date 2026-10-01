@@ -117,14 +117,18 @@ export function FlyToCartProvider({ children }) {
     setFlights((current) => [...current.slice(-2), flight]);
   }, []);
 
+  const pulseCartTarget = useCallback((target = visibleCartTarget()) => {
+    if (reduceMotion || !target?.isConnected) return;
+    target.classList.remove("is-cart-arrival");
+    void target.offsetWidth;
+    target.classList.add("is-cart-arrival");
+    window.setTimeout(() => target?.classList.remove("is-cart-arrival"), 420);
+  }, [reduceMotion]);
+
   const finishFlight = useCallback((flight) => {
     setFlights((current) => current.filter((item) => item.id !== flight.id));
-    if (reduceMotion || !flight.target?.isConnected) return;
-    flight.target.classList.remove("is-cart-arrival");
-    void flight.target.offsetWidth;
-    flight.target.classList.add("is-cart-arrival");
-    window.setTimeout(() => flight.target?.classList.remove("is-cart-arrival"), 420);
-  }, [reduceMotion]);
+    pulseCartTarget(flight.target);
+  }, [pulseCartTarget]);
 
   const showCartToast = useCallback((product, onUndo) => {
     window.clearTimeout(toastTimer.current);
@@ -137,8 +141,8 @@ export function FlyToCartProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ prepareFlight, launchFlight, showCartToast }),
-    [prepareFlight, launchFlight, showCartToast],
+    () => ({ prepareFlight, launchFlight, pulseCartTarget, showCartToast }),
+    [prepareFlight, launchFlight, pulseCartTarget, showCartToast],
   );
 
   return (

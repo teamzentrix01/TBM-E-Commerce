@@ -254,9 +254,12 @@ export function Price({ product }) {
   );
 }
 
-export function QuantityControl({ product, quantity, onUpdate, busy = false }) {
+export function QuantityControl({ product, quantity, onUpdate, busy = false, justAdded = false }) {
   return (
-    <div className="bz-quantity" aria-label={`Quantity for ${product.name}`}>
+    <div
+      className={`bz-quantity${justAdded ? " is-quantity-entering" : ""}`}
+      aria-label={`Quantity for ${product.name}`}
+    >
       <button
         type="button"
         aria-label={`Remove one ${product.name}`}
@@ -284,16 +287,25 @@ export function QuantityControl({ product, quantity, onUpdate, busy = false }) {
 export function AddToCart({ product, compact = false }) {
   const { cart, locationGate, storeVerified } = useStore();
   const { changeItem, sessionReady } = useCartSession();
-  const { prepareFlight, launchFlight, showCartToast } = useFlyToCart();
+  const { prepareFlight, launchFlight, pulseCartTarget, showCartToast } = useFlyToCart();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [justAdded, setJustAdded] = useState(false);
   const pendingFlight = useRef(null);
+  const feedbackTimer = useRef(null);
   const quantity =
     cart.find((item) => String(item.id) === String(product.id))?.qty || 0;
+  useEffect(() => () => window.clearTimeout(feedbackTimer.current), []);
+  function flashAdded() {
+    window.clearTimeout(feedbackTimer.current);
+    setJustAdded(true);
+    feedbackTimer.current = window.setTimeout(() => setJustAdded(false), 460);
+  }
   useEffect(() => {
     const pending = pendingFlight.current;
     if (!pending) return;
     if (quantity > pending.startingQuantity) {
+      flashAdded();
       launchFlight(pending.flight);
       showCartToast(pending.product, () => changeItem(pending.product, -1));
       pendingFlight.current = null;
@@ -320,7 +332,9 @@ export function AddToCart({ product, compact = false }) {
       const changed = await changeItem(item, amount);
       if (amount > 0) {
         if (changed) {
+          flashAdded();
           if (flight) launchFlight(flight);
+          else pulseCartTarget();
           showCartToast(item, () => changeItem(item, -1));
         }
         else if (deferred) {
@@ -348,6 +362,7 @@ export function AddToCart({ product, compact = false }) {
           product={product}
           quantity={quantity}
           busy={busy || !sessionReady}
+          justAdded={justAdded}
           onUpdate={change}
         />
       ) : (
