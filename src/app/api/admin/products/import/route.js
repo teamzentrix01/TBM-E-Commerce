@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClient } from "@/lib/db";
 
+import { requireAdmin, writeAdminAudit } from "@/lib/ecommerceAuth";
 // Helper to parse RFC-4180 CSV
 function parseCsv(text) {
   const lines = [];
@@ -81,6 +82,27 @@ function processCsvText(csvText) {
 export async function POST(request) {
   let client;
   try {
+    const contentLength = Number(request.headers.get("content-length") || 0);
+    if (contentLength > 5 * 1024 * 1024) {
+      return NextResponse.json(
+        { success: false, message: "Import payload is limited to 5 MB" },
+        { status: 413 },
+      );
+    }
+    const storeId = Number(new URL(request.url).searchParams.get("store_id"));
+    if (!storeId) {
+      return NextResponse.json(
+        { success: false, message: "Store ID is required" },
+        { status: 400 },
+      );
+    }
+    const admin = await requireAdmin(request, storeId);
+    if (admin.error) {
+      return NextResponse.json(
+        { success: false, message: admin.error },
+        { status: admin.status },
+      );
+    }
     const contentType = request.headers.get("content-type") || "";
     let records = [];
 
@@ -101,6 +123,25 @@ export async function POST(request) {
       return NextResponse.json(
         { success: false, message: "No records found in CSV payload" },
         { status: 400 }
+      );
+    }
+    if (records.length > 2000) {
+      return NextResponse.json(
+        { success: false, message: "Import is limited to 2000 records per request" },
+        { status: 413 },
+      );
+    }
+    if (
+      records.some(
+        (record) =>
+          String(record.barcode || "").length > 100 ||
+          String(record.image_url || "").length > 2_000_000 ||
+          String(record.description || "").length > 10_000,
+      )
+    ) {
+      return NextResponse.json(
+        { success: false, message: "One or more import fields exceed the allowed size" },
+        { status: 413 },
       );
     }
 
@@ -127,6 +168,13 @@ export async function POST(request) {
     }
 
     await client.query("COMMIT");
+    await writeAdminAudit({
+      request,
+      actorUserId: admin.user.id,
+      action: "catalog_bulk_import",
+      storeId,
+      afterData: { updatedCount },
+    });
     return NextResponse.json({
       success: true,
       message: `Successfully imported ${updatedCount} products`,

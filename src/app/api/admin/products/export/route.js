@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { requireAdmin, writeAdminAudit } from "@/lib/ecommerceAuth";
 
 const SYNC_BASE_URL = (
   process.env.SYNC_PUBLIC_API_BASE_URL || "https://sync.thebuyzaarmart.com"
@@ -9,7 +10,13 @@ export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const storeId = searchParams.get("store_id") || "3";
-
+    const admin = await requireAdmin(request, storeId);
+    if (admin.error) {
+      return NextResponse.json(
+        { success: false, message: admin.error },
+        { status: admin.status },
+      );
+    }
     let allProducts = [];
     let page = 1;
     let totalPages = 1;
@@ -103,6 +110,13 @@ export async function GET(request) {
       csvLines.push(row.join(","));
     }
 
+    await writeAdminAudit({
+      request,
+      actorUserId: admin.user.id,
+      action: "catalog_export",
+      storeId,
+      afterData: { exportedCount: allProducts.length },
+    });
     const csvText = csvLines.join("\n");
     return new NextResponse(csvText, {
       headers: {

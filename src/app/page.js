@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -48,6 +48,17 @@ export default function Home() {
   const [visibleSavingsCount, setVisibleSavingsCount] = useState(8);
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreProductsError, setMoreProductsError] = useState(false);
+  const [promoIndex, setPromoIndex] = useState(0);
+  const [recentProducts, setRecentProducts] = useState([]);
+  const promoTouchStart = useRef(null);
+
+  useEffect(() => {
+    try {
+      setRecentProducts(JSON.parse(localStorage.getItem("tbm-recent-products") || "[]"));
+    } catch {
+      setRecentProducts([]);
+    }
+  }, []);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search).get("q");
@@ -170,6 +181,7 @@ export default function Home() {
   const picks = sortProducts(products, "featured");
   const savings = sortProducts(products, "discount");
   const images = savings.filter((product) => product.image_url).slice(0, 3);
+  const hamperPreviewItems = products.filter((product) => product.image_url).slice(0, 4);
   const showCatalogLoading = !ready || (loading && !products.length);
   const shopCategories = buildShopCategories({
     categories,
@@ -177,6 +189,20 @@ export default function Home() {
     limit: 20,
   });
   const { hero, promoCards, strip } = banners;
+
+  useEffect(() => {
+    setPromoIndex(0);
+  }, [promoCards.length]);
+
+  useEffect(() => {
+    if (promoCards.length < 2) return undefined;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (reducedMotion.matches) return undefined;
+    const timer = window.setInterval(() => {
+      setPromoIndex((current) => (current + 1) % promoCards.length);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [promoCards.length]);
 
   return (
     <>
@@ -193,14 +219,15 @@ export default function Home() {
           </Link>
         ) : null}
 
-        <section
-          className={`bz-hero bz-hero-banner${hero.image_url ? " has-banner-image" : ""}`}
-          style={
-            hero.image_url
-              ? { "--bz-hero-image": `url(${hero.image_url})` }
-              : undefined
-          }
-        >
+        <div className="bz-home-featured">
+          <section
+            className={`bz-hero bz-hero-banner${hero.image_url ? " has-banner-image" : ""}`}
+            style={
+              hero.image_url
+                ? { "--bz-hero-image": `url(${hero.image_url})` }
+                : undefined
+            }
+          >
           <div className="bz-hero-copy">
             <span className="bz-eyebrow">{hero.eyebrow}</span>
             <h1>{hero.title}</h1>
@@ -240,30 +267,69 @@ export default function Home() {
               </div>
             )}
           </div>
-        </section>
+          </section>
 
-        <section className="bz-promo-grid" aria-label="Featured offers">
-          {promoCards.map((card) => (
-            <Link
-              key={card.id}
-              href={card.href}
-              className={"bz-promo-card bz-promo-" + card.tone}
-            >
-              <div>
-                <h2>{card.title}</h2>
-                <p>{card.subtitle}</p>
-                <span>{card.cta}</span>
-              </div>
-              {card.image_url ? (
-                <span className="bz-promo-card-media">
-                  <img src={card.image_url} alt="" />
-                </span>
-              ) : (
-                promoCardIcon(card)
-              )}
-            </Link>
-          ))}
-        </section>
+          <section
+            className="bz-promo-carousel"
+            aria-label="Featured offers"
+            aria-roledescription="carousel"
+            onTouchStart={(event) => {
+              promoTouchStart.current = event.touches[0]?.clientX ?? null;
+            }}
+            onTouchEnd={(event) => {
+              if (promoCards.length < 2) return;
+              const start = promoTouchStart.current;
+              const end = event.changedTouches[0]?.clientX;
+              promoTouchStart.current = null;
+              if (start == null || end == null || Math.abs(end - start) < 45) return;
+              setPromoIndex((current) =>
+                end < start
+                  ? (current + 1) % promoCards.length
+                  : (current - 1 + promoCards.length) % promoCards.length,
+              );
+            }}
+          >
+          <div
+            className="bz-promo-grid"
+            style={{ "--bz-promo-index": promoIndex }}
+          >
+            {promoCards.map((card) => (
+              <Link
+                key={card.id}
+                href={card.href}
+                className={"bz-promo-card bz-promo-" + card.tone}
+              >
+                <div>
+                  <h2>{card.title}</h2>
+                  <p>{card.subtitle}</p>
+                  <span>{card.cta}</span>
+                </div>
+                {card.image_url ? (
+                  <span className="bz-promo-card-media">
+                    <img src={card.image_url} alt="" />
+                  </span>
+                ) : (
+                  promoCardIcon(card)
+                )}
+              </Link>
+            ))}
+          </div>
+          {promoCards.length > 1 ? (
+            <div className="bz-promo-dots" aria-label="Choose featured offer">
+              {promoCards.map((card, index) => (
+                <button
+                  key={card.id}
+                  type="button"
+                  className={index === promoIndex ? "is-active" : ""}
+                  aria-label={`Show offer ${index + 1}: ${card.title}`}
+                  aria-current={index === promoIndex ? "true" : undefined}
+                  onClick={() => setPromoIndex(index)}
+                />
+              ))}
+            </div>
+          ) : null}
+          </section>
+        </div>
 
         <section id="categories" className="bz-category-section">
           <div className="bz-section-heading">
@@ -325,14 +391,37 @@ export default function Home() {
         </section>
 
         <section className="bz-hamper-teaser">
-          <div>
-            <span className="bz-eyebrow">
-              <Gift size={15} /> MULTI-OPTION GIFT HAMPERS
+          <div className="bz-hamper-teaser-art" aria-hidden="true">
+            <span className="bz-hamper-teaser-tag">
+              <Gift size={15} /> READY TO GIFT
             </span>
-            <h2>Ready packs or customise your own</h2>
+            <div className="bz-hamper-teaser-products">
+              {hamperPreviewItems.length ? (
+                hamperPreviewItems.map((product) => (
+                  <span className="bz-hamper-teaser-product" key={product.id}>
+                    <ProductImage product={product} />
+                  </span>
+                ))
+              ) : (
+                <span className="bz-hamper-teaser-gift">
+                  <Gift size={38} strokeWidth={1.5} />
+                  <b>Gift box</b>
+                </span>
+              )}
+            </div>
+            <div className="bz-hamper-teaser-basket">
+              <span />
+            </div>
+            <span className="bz-hamper-teaser-ribbon" />
+          </div>
+          <div className="bz-hamper-teaser-copy">
+            <span className="bz-eyebrow">
+              <Gift size={15} /> GIFT HAMPERS
+            </span>
+            <h2>Send a hamper made your way</h2>
             <p>
-              Build thoughtful gift boxes from the same local store catalogue —
-              by budget, occasion, or fully your way.
+              Pick a ready-made gift box or build one with local favourites and
+              add a personal message.
             </p>
             <div className="bz-hamper-chips">
               {readyPacks.slice(0, 3).map((pack) => (
@@ -341,7 +430,7 @@ export default function Home() {
                 </Link>
               ))}
               <Link className="is-primary" href="/hamper?tab=customise">
-                Customise <ArrowRight size={14} />
+                Build a hamper <ArrowRight size={14} />
               </Link>
             </div>
           </div>
@@ -382,7 +471,7 @@ export default function Home() {
           )}
         </section>
 
-        <section className="bz-section">
+        <section className="bz-section bz-deals-section">
           <div className="bz-section-heading">
             <div>
               <span className="bz-eyebrow">
@@ -394,10 +483,12 @@ export default function Home() {
               Explore savings <ArrowRight size={16} />
             </Link>
           </div>
-          <ProductGrid
-            products={savings.slice(0, visibleSavingsCount)}
-            loading={showCatalogLoading && !storeError && !savings.length}
-          />
+          <div className="bz-deals-carousel">
+            <ProductGrid
+              products={savings.slice(0, visibleSavingsCount)}
+              loading={showCatalogLoading && !storeError && !savings.length}
+            />
+          </div>
           {moreProductsError ? (
             <p className="bz-load-more-error" role="alert">
               Could not load more products. Please try again.
@@ -420,6 +511,15 @@ export default function Home() {
             </div>
           ) : null}
         </section>
+
+        {recentProducts.filter((item) => !store?.id || String(item.store_id) === String(store.id)).length ? (
+          <section className="bz-section bz-recent-section">
+            <div className="bz-section-heading">
+              <div><span className="bz-eyebrow">CONTINUE BROWSING</span><h2>Recently viewed</h2></div>
+            </div>
+            <div className="bz-horizontal-products"><ProductGrid products={recentProducts.filter((item) => !store?.id || String(item.store_id) === String(store.id)).slice(0, 6)} /></div>
+          </section>
+        ) : null}
 
         <section className="bz-benefits" aria-label="Shopping with Buyzaar">
           <div>

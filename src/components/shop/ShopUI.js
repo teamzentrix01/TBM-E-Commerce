@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Heart,
+  Eye,
   Minus,
   Plus,
   ShoppingBag,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { useStore } from "@/context/StoreContext";
 import { useCartSession } from "@/context/CartSessionContext";
+import { useFlyToCart } from "@/components/shop/FlyToCart";
 import { cartTotals, discount, formatPackSize, listingUrl, money, productBrandLabel } from "@/lib/shop.mjs";
 
 export function ProductImage({ product, eager = false }) {
@@ -71,6 +73,7 @@ export function ProductGallery({ product }) {
   const [zoom, setZoom] = useState(null);
   const mainRef = useRef(null);
   const thumbsRef = useRef(null);
+  const swipeStart = useRef(null);
   const current = urls[active] || urls[0] || null;
 
   useEffect(() => {
@@ -102,6 +105,32 @@ export function ProductGallery({ product }) {
     node.scrollBy({ left: direction * 140, behavior: "smooth" });
   }
 
+  function handleTouchStart(event) {
+    if (event.touches.length !== 1) {
+      swipeStart.current = null;
+      return;
+    }
+    const touch = event.touches[0];
+    swipeStart.current = { x: touch.clientX, y: touch.clientY };
+  }
+
+  function handleTouchEnd(event) {
+    const start = swipeStart.current;
+    const touch = event.changedTouches[0];
+    swipeStart.current = null;
+    if (!start || !touch || urls.length < 2) return;
+
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaX) < 48 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) return;
+
+    setActive((index) =>
+      Math.max(0, Math.min(urls.length - 1, index + (deltaX < 0 ? 1 : -1))),
+    );
+    setFailedUrl(null);
+    setZoom(null);
+  }
+
   if (!current || failedUrl === current) {
     return (
       <span className="bz-image-fallback">
@@ -129,6 +158,11 @@ export function ProductGallery({ product }) {
           onMouseEnter={handleMove}
           onMouseMove={handleMove}
           onMouseLeave={() => setZoom(null)}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={() => {
+            swipeStart.current = null;
+          }}
         >
           {loadedUrl !== current && <span className="bz-image-placeholder" aria-hidden="true" />}
           <img
@@ -227,7 +261,7 @@ export function QuantityControl({ product, quantity, onUpdate, busy = false }) {
         type="button"
         aria-label={`Remove one ${product.name}`}
         disabled={busy}
-        onClick={() => onUpdate(product, -1)}
+        onClick={(event) => onUpdate(product, -1, event.currentTarget)}
       >
         <Minus size={15} />
       </button>
@@ -239,7 +273,7 @@ export function QuantityControl({ product, quantity, onUpdate, busy = false }) {
           busy ||
           quantity >= Math.max(0, Math.floor(Number(product.stock || 0)))
         }
-        onClick={() => onUpdate(product, 1)}
+        onClick={(event) => onUpdate(product, 1, event.currentTarget)}
       >
         <Plus size={15} />
       </button>
@@ -248,18 +282,59 @@ export function QuantityControl({ product, quantity, onUpdate, busy = false }) {
 }
 
 export function AddToCart({ product, compact = false }) {
-  const { cart } = useStore();
+  const { cart, locationGate, storeVerified } = useStore();
   const { changeItem, sessionReady } = useCartSession();
+  const { prepareFlight, launchFlight, showCartToast } = useFlyToCart();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const pendingFlight = useRef(null);
   const quantity =
     cart.find((item) => String(item.id) === String(product.id))?.qty || 0;
-  async function change(item, amount) {
+  useEffect(() => {
+    const pending = pendingFlight.current;
+    if (!pending) return;
+    if (quantity > pending.startingQuantity) {
+      launchFlight(pending.flight);
+      showCartToast(pending.product, () => changeItem(pending.product, -1));
+      pendingFlight.current = null;
+      return;
+    }
+    if (Date.now() - pending.createdAt >= 120000) {
+      pendingFlight.current = null;
+      return;
+    }
+    if (locationGate && String(locationGate.product?.id) === String(product.id)) {
+      pending.sawGate = true;
+      if (locationGate.error) pendingFlight.current = null;
+    } else if (pending.sawGate) {
+      pendingFlight.current = null;
+    }
+  }, [quantity, launchFlight, locationGate, product.id, changeItem, showCartToast]);
+
+  async function change(item, amount, origin = null) {
+    const flight = amount > 0 ? prepareFlight(item, origin) : null;
+    const deferred = amount > 0 && !storeVerified;
     setBusy(true);
     setError("");
     try {
-      await changeItem(item, amount);
+      const changed = await changeItem(item, amount);
+      if (amount > 0) {
+        if (changed) {
+          if (flight) launchFlight(flight);
+          showCartToast(item, () => changeItem(item, -1));
+        }
+        else if (deferred) {
+          pendingFlight.current = {
+            flight,
+            product: item,
+            createdAt: Date.now(),
+            startingQuantity: quantity,
+            sawGate: false,
+          };
+        }
+      }
     } catch (failure) {
+      pendingFlight.current = null;
       setError(failure.message);
     } finally {
       setBusy(false);
@@ -279,7 +354,7 @@ export function AddToCart({ product, compact = false }) {
         <button
           className={`bz-button bz-add${compact ? " bz-add-soft" : ""}`}
           disabled={busy || !sessionReady || outOfStock}
-          onClick={() => change(product, 1)}
+          onClick={(event) => change(product, 1, event.currentTarget)}
         >
           {outOfStock ? "Out of stock" : busy ? "Adding…" : compact ? "ADD" : "Add to cart"}
           {!outOfStock && <Plus size={15} />}
@@ -310,27 +385,27 @@ export function SaveProduct({ product }) {
 }
 
 export function ProductCard({ product }) {
+  const [quickOpen, setQuickOpen] = useState(false);
   const saving = discount(product);
   const brand = productBrandLabel(product);
   const pack = formatPackSize(product.unit);
   const stock = Math.max(0, Math.floor(Number(product.stock || 0)));
   return (
-    <article className="bz-product-card">
+    <article className="bz-product-card" data-product-id={product.id}>
       <div className="bz-product-media">
+        {saving > 0 && <span className="bz-discount">{saving}% OFF</span>}
         <Link
           href={`/product/${product.id}`}
           aria-label={`View ${product.name}`}
         >
           <ProductImage product={product} />
         </Link>
-        {saving > 0 && <span className="bz-discount">{saving}% OFF</span>}
         <SaveProduct product={product} />
+        <button className="bz-quick-view-button" type="button" aria-label={`Quick view ${product.name}`} onClick={() => setQuickOpen(true)}>
+          <Eye size={15} /> <span>Quick view</span>
+        </button>
       </div>
       <div className="bz-product-info">
-        <Link className="bz-product-name" href={`/product/${product.id}`} title={product.name}>
-          {product.name}
-        </Link>
-        <Price product={product} />
         {brand && product.brand_id ? (
           <Link
             className="bz-product-brand"
@@ -343,6 +418,9 @@ export function ProductCard({ product }) {
             {brand || "\u00A0"}
           </span>
         )}
+        <Link className="bz-product-name" href={`/product/${product.id}`} title={product.name}>
+          {product.name}
+        </Link>
         <div className="bz-product-meta">
           {pack ? <span className="bz-unit">{pack}</span> : null}
           {stock > 0 ? (
@@ -351,8 +429,25 @@ export function ProductCard({ product }) {
             <span className="bz-stock-out">Out of stock</span>
           )}
         </div>
+        <Price product={product} />
         <AddToCart product={product} compact />
       </div>
+      {quickOpen ? (
+        <Modal title="Quick view" onClose={() => setQuickOpen(false)} className="bz-quick-view-modal">
+          <div className="bz-quick-view-content">
+            <div className="bz-quick-view-image"><ProductImage product={product} eager /></div>
+            <div>
+              {brand ? <small>{brand}</small> : null}
+              <h2>{product.name}</h2>
+              {pack ? <p>{pack}</p> : null}
+              <Price product={product} />
+              <span className={stock > 0 ? "bz-stock-ok" : "bz-stock-out"}>{stock > 0 ? "Available" : "Out of stock"}</span>
+              <AddToCart product={product} />
+              <Link className="bz-text-link" href={`/product/${product.id}`}>View product details <ArrowRight size={14} /></Link>
+            </div>
+          </div>
+        </Modal>
+      ) : null}
     </article>
   );
 }

@@ -97,7 +97,7 @@ export async function getCurrentUser() {
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const result = await query(
-    `SELECT u.id, u.phone, u.name, u.email, u.phone_verified_at, u.image_url
+    `SELECT u.id, u.phone, u.name, u.email, u.phone_verified_at, u.image_url, u.role
      FROM ecommerce_sessions s
      INNER JOIN ecommerce_users u ON u.id = s.user_id
      WHERE s.token_hash = $1
@@ -115,6 +115,49 @@ export async function requireEcommerceUser() {
   return user
     ? { user, error: null }
     : { user: null, error: "Authentication required" };
+}
+
+export async function requireAdmin(request, storeId = null) {
+  const auth = await requireEcommerceUser();
+  if (auth.error) return { user: null, role: null, error: auth.error, status: 401 };
+
+  const role = String(auth.user.role || "customer");
+  if (!["admin", "super_admin", "store_manager"].includes(role)) {
+    return { user: null, role, error: "Admin access required", status: 403 };
+  }
+
+  if (storeId && role === "store_manager") {
+    const access = await query(
+      `SELECT 1
+       FROM ecommerce_admin_store_access
+       WHERE user_id = $1 AND store_id = $2
+       LIMIT 1`,
+      [auth.user.id, Number(storeId)],
+    );
+    if (!access.rowCount) {
+      return { user: null, role, error: "Store access denied", status: 403 };
+    }
+  }
+
+  return { user: auth.user, role, error: null, status: 200 };
+}
+
+export async function writeAdminAudit({ request, actorUserId, action, storeId = null, barcode = null, beforeData = null, afterData = null }) {
+  const meta = requestMeta(request);
+  await query(
+    `INSERT INTO ecommerce_admin_audit_logs
+       (actor_user_id, action, store_id, barcode, before_data, after_data, request_ip)
+     VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7)`,
+    [
+      actorUserId,
+      action,
+      storeId ? Number(storeId) : null,
+      barcode ? String(barcode) : null,
+      JSON.stringify(beforeData),
+      JSON.stringify(afterData),
+      meta.ip,
+    ],
+  );
 }
 
 export async function revokeCurrentSession() {

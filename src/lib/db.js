@@ -92,6 +92,7 @@ async function runEcommerceSchema() {
         phone_verified_at TIMESTAMPTZ,
         image_url TEXT,
         google_id VARCHAR(100) UNIQUE,
+        role VARCHAR(30) NOT NULL DEFAULT 'customer',
         is_active BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -100,6 +101,28 @@ async function runEcommerceSchema() {
       ALTER TABLE ecommerce_users ALTER COLUMN phone DROP NOT NULL;
       ALTER TABLE ecommerce_users ADD COLUMN IF NOT EXISTS image_url TEXT;
       ALTER TABLE ecommerce_users ADD COLUMN IF NOT EXISTS google_id VARCHAR(100) UNIQUE;
+      ALTER TABLE ecommerce_users ADD COLUMN IF NOT EXISTS role VARCHAR(30) NOT NULL DEFAULT 'customer';
+
+      CREATE TABLE IF NOT EXISTS ecommerce_admin_store_access (
+        user_id BIGINT NOT NULL REFERENCES ecommerce_users(id) ON DELETE CASCADE,
+        store_id BIGINT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, store_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS ecommerce_admin_audit_logs (
+        id BIGSERIAL PRIMARY KEY,
+        actor_user_id BIGINT REFERENCES ecommerce_users(id) ON DELETE SET NULL,
+        action VARCHAR(60) NOT NULL,
+        store_id BIGINT,
+        barcode VARCHAR(100),
+        before_data JSONB,
+        after_data JSONB,
+        request_ip VARCHAR(80),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS ecommerce_admin_audit_logs_created_idx
+        ON ecommerce_admin_audit_logs(created_at DESC);
 
       CREATE TABLE IF NOT EXISTS ecommerce_otp_challenges (
         id BIGSERIAL PRIMARY KEY,

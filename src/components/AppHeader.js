@@ -9,7 +9,9 @@ import {
   LocateFixed,
   MapPin,
   Search,
+  ShieldCheck,
   ShoppingCart,
+  Sparkles,
   Truck,
   UserRound,
 } from "lucide-react";
@@ -17,6 +19,7 @@ import { useStore } from "@/context/StoreContext";
 import { useCartSession } from "@/context/CartSessionContext";
 import { listingUrl } from "@/lib/shop.mjs";
 import { Modal } from "@/components/shop/ShopUI";
+import { fetchProducts } from "@/lib/api";
 
 export default function AppHeader({ search = "", onSearch }) {
   const router = useRouter();
@@ -41,8 +44,25 @@ export default function AppHeader({ search = "", onSearch }) {
   const [gpsBusy, setGpsBusy] = useState(false);
   const [error, setError] = useState("");
   const [candidate, setCandidate] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
+  const [searchFocused, setSearchFocused] = useState(false);
   useEffect(() => setQuery(search), [search]);
-
+  useEffect(() => {
+    if (!activeStore?.id || query.trim().length < 2 || !searchFocused) {
+      setSuggestions([]);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      fetchProducts({ storeId: activeStore.id, search: query, pageSize: 5, signal: controller.signal })
+        .then((data) => setSuggestions(data.records || []))
+        .catch(() => {});
+    }, 250);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [activeStore?.id, query, searchFocused]);
   function applyStore(store, deliveryPincode, verified) {
     if (String(store.id) !== String(activeStore?.id)) clearSession();
     selectStore(store, deliveryPincode, verified);
@@ -150,10 +170,23 @@ export default function AppHeader({ search = "", onSearch }) {
                 onSearch?.(event.target.value);
               }}
               placeholder="Search products, brands & everyday essentials"
+              onFocus={() => setSearchFocused(true)}
+              onBlur={() => setTimeout(() => setSearchFocused(false), 120)}
             />
             <button type="submit" aria-label="Submit search">
               <ArrowRight size={18} />
             </button>
+            {searchFocused && query.trim().length >= 2 ? (
+              <div className="bz-search-suggestions" role="listbox" aria-label="Product suggestions">
+                {suggestions.length ? suggestions.map((product) => (
+                  <Link key={product.id} href={`/product/${product.id}`} role="option" onMouseDown={(event) => event.preventDefault()}>
+                    <span>{product.name}</span>
+                    {product.brand ? <small>{product.brand}</small> : null}
+                    <ArrowRight size={15} />
+                  </Link>
+                )) : <span className="bz-search-no-suggestion">Search all products for “{query.trim()}”</span>}
+              </div>
+            ) : null}
           </form>
           <nav className="bz-header-actions" aria-label="Your account">
             {links.map(({ href, icon: Icon, label, count }) => (
@@ -163,7 +196,7 @@ export default function AppHeader({ search = "", onSearch }) {
                 aria-current={pathname === href ? "page" : undefined}
                 aria-label={label + (count ? ", " + count + " items" : "")}
               >
-                <span>
+                <span data-cart-target={href === "/cart" ? "desktop" : undefined}>
                   <Icon size={21} />
                   {count > 0 && <em>{count}</em>}
                 </span>
@@ -282,34 +315,32 @@ export function PageFooter() {
           <Link className="bz-logo" href="/">
             <img src="/buyzaar-logo.svg" alt="The Buyzaar Mart" />
           </Link>
-          <p>
-            Everyday essentials. Trusted brands.
-            <br />
-            All from your neighbourhood mart.
-          </p>
-          <span className="bz-green">
-            <Truck size={16} /> A little closer to home.
-          </span>
+          <span className="bz-footer-kicker">YOUR NEIGHBOURHOOD MART</span>
+          <p>Everyday essentials and trusted brands from your selected local store.</p>
+          <Link className="bz-footer-shop" href="/products">Start shopping <ArrowRight size={15} /></Link>
         </div>
         <nav aria-label="Explore">
-          <b>Explore the store</b>
+          <b><Sparkles size={16} /> Explore the store</b>
           <Link href="/products">All products</Link>
           <Link href="/#categories">Shop by category</Link>
           <Link href="/hamper">Gift hampers</Link>
           <Link href="/products?sort=discount">Everyday savings</Link>
         </nav>
         <nav aria-label="Account links">
-          <b>Here for you</b>
+          <b><UserRound size={16} /> Here for you</b>
           <Link href="/account">My account & addresses</Link>
           <Link href="/orders">Orders & tracking</Link>
           <Link href="/wishlist">My wishlist</Link>
           <Link href="/cart">My cart</Link>
         </nav>
-        <div>
-          <b>Local shopping, made simple</b>
-          <p>Store-wise prices and availability from your neighbourhood mart.</p>
+        <div className="bz-footer-local-card">
+          <span className="bz-footer-local-icon"><Truck size={21} /></span>
+          <div>
+            <b>Fast local shopping</b>
+            <p>Live store-wise prices and availability from your neighbourhood mart.</p>
+          </div>
           <span className="bz-footer-note">
-            Cash, UPI & secure online payments
+            <ShieldCheck size={15} /> Cash, UPI & secure online payments
           </span>
         </div>
       </div>

@@ -19,6 +19,7 @@ import {
   Plus,
   Pencil,
   ShieldCheck,
+  Download,
 } from "lucide-react";
 import AppHeader, { PageFooter } from "@/components/AppHeader";
 import { useStore } from "@/context/StoreContext";
@@ -56,6 +57,7 @@ export default function Account() {
   const [addressManagerOpen, setAddressManagerOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [profileEditOpen, setProfileEditOpen] = useState(false);
+  const [installReady, setInstallReady] = useState(false);
   
   // State for new address form
   const [showAddressForm, setShowAddressForm] = useState(false);
@@ -124,6 +126,22 @@ export default function Account() {
     } catch (e) {
       setAddressFormError(e.message || "Failed to save address");
     }
+  }
+
+  useEffect(() => {
+    const syncInstall = () => setInstallReady(Boolean(window.__buyzaarInstallPrompt));
+    syncInstall();
+    window.addEventListener("buyzaar-install-ready", syncInstall);
+    return () => window.removeEventListener("buyzaar-install-ready", syncInstall);
+  }, []);
+
+  async function installApp() {
+    const prompt = window.__buyzaarInstallPrompt;
+    if (!prompt) return;
+    await prompt.prompt();
+    await prompt.userChoice.catch(() => null);
+    window.__buyzaarInstallPrompt = null;
+    setInstallReady(false);
   }
 
   useEffect(() => {
@@ -500,6 +518,13 @@ export default function Account() {
             </div>
             <ArrowRight size={18} />
           </button>
+          {installReady ? (
+            <button type="button" onClick={installApp}>
+              <span><Download size={20} /></span>
+              <div><b>Install Buyzaar app</b><small>Add it to your home screen</small></div>
+              <ArrowRight size={18} />
+            </button>
+          ) : null}
         </section>
 
         <section className="bz-account-details">

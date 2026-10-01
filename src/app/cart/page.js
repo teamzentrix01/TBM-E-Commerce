@@ -25,7 +25,7 @@ import { useCartSession } from "@/context/CartSessionContext";
 import { fetchProducts } from "@/lib/api";
 import { accountLoginHref, rememberLoginReturn } from "@/lib/authNav.mjs";
 import { readHamperGiftMeta } from "@/lib/hampers.mjs";
-import { cartTotals, FREE_DELIVERY_MINIMUM, money } from "@/lib/shop.mjs";
+import { cartTotals, money } from "@/lib/shop.mjs";
 
 export default function CartPage() {
   const { activeStore, authReady, cart, cartCount, customer, ready } =
@@ -46,6 +46,8 @@ export default function CartPage() {
   const [shareBusy, setShareBusy] = useState(false);
   const [shareError, setShareError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [removedItem, setRemovedItem] = useState(null);
+  const undoTimerRef = useRef(null);
   useEffect(() => {
     setHamperGift(readHamperGiftMeta());
   }, []);
@@ -77,8 +79,10 @@ export default function CartPage() {
     setError("");
     try {
       await changeItem(product, amount);
+      return true;
     } catch (failure) {
       setError(failure.message);
+      return false;
     } finally {
       setBusy(false);
       busyRef.current = false;
@@ -98,7 +102,21 @@ export default function CartPage() {
     }
   }
   const totals = cartTotals(cart);
-  const remaining = Math.max(0, FREE_DELIVERY_MINIMUM - totals.subtotal);
+  useEffect(() => () => clearTimeout(undoTimerRef.current), []);
+  async function removeWithUndo(item) {
+    const removed = await change(item, -item.qty);
+    if (!removed) return;
+    setRemovedItem(item);
+    clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => setRemovedItem(null), 5000);
+  }
+  async function undoRemove() {
+    if (!removedItem) return;
+    const item = removedItem;
+    setRemovedItem(null);
+    clearTimeout(undoTimerRef.current);
+    await change(item, item.qty);
+  }
   const inviteUrl =
     session?.inviteToken && typeof window !== "undefined"
       ? `${window.location.origin}/cart/join/${session.inviteToken}`
@@ -183,15 +201,9 @@ export default function CartPage() {
                 <div className="bz-delivery-banner">
                   <Truck size={22} />
                   <span>
-                    {remaining ? (
-                      <>
-                        Add <b>{money(remaining)}</b> more for free delivery
-                      </>
-                    ) : (
-                      <b>You have unlocked free delivery!</b>
-                    )}
+                    <b>Shopping from your selected local store</b>
                     <small>
-                      Shopping from {activeStore?.name || "your local store"}
+                      {activeStore?.name || "Choose a store to confirm live availability"}
                     </small>
                   </span>
                 </div>
@@ -225,7 +237,7 @@ export default function CartPage() {
                           className="bz-icon-button"
                           aria-label={`Remove ${item.name} from cart`}
                           disabled={busy}
-                          onClick={() => change(item, -item.qty)}
+                          onClick={() => removeWithUndo(item)}
                         >
                           <Trash2 size={17} />
                         </button>
@@ -305,6 +317,12 @@ export default function CartPage() {
             {customer ? "Checkout" : "Login to checkout"}
             <ArrowRight size={17} />
           </Link>
+        </div>
+      ) : null}
+      {removedItem ? (
+        <div className="bz-undo-snackbar" role="status">
+          <span><b>Removed from cart</b><small>{removedItem.name}</small></span>
+          <button type="button" onClick={undoRemove}>Undo</button>
         </div>
       ) : null}
       <PageFooter />

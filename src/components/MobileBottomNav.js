@@ -61,7 +61,10 @@ export default function MobileBottomNav() {
             className={active ? "is-active" : undefined}
             aria-current={active ? "page" : undefined}
           >
-            <span className="bz-bottom-nav-icon">
+            <span
+              className="bz-bottom-nav-icon"
+              data-cart-target={badge ? "mobile" : undefined}
+            >
               <Icon size={22} strokeWidth={active ? 2.4 : 2} />
               {badge && cartCount > 0 && <em>{cartCount > 99 ? "99+" : cartCount}</em>}
             </span>

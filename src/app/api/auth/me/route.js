@@ -57,7 +57,7 @@ export async function PATCH(request) {
            phone = NULLIF($3, ''),
            updated_at = NOW()
        WHERE id = $4
-       RETURNING id, phone, name, email, phone_verified_at, image_url`,
+      RETURNING id, phone, name, email, phone_verified_at, image_url, role`,
       [name, email, phone, auth.user.id],
     );
     return NextResponse.json({ success: true, data: { user: result.rows[0] } });

@@ -1,13 +1,37 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Heart, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowRight, Heart, ShoppingBag, Sparkles } from "lucide-react";
 import AppHeader, { PageFooter } from "@/components/AppHeader";
 import { EmptyState, ProductCard } from "@/components/shop/ShopUI";
 import { useStore } from "@/context/StoreContext";
+import { useCartSession } from "@/context/CartSessionContext";
 
 export default function Wishlist() {
-  const { wishlist } = useStore();
+  const { cart, wishlist } = useStore();
+  const { changeItem, sessionReady } = useCartSession();
+  const [filter, setFilter] = useState("all");
+  const [adding, setAdding] = useState(false);
+  const available = useMemo(
+    () => wishlist.filter((product) => Number(product.stock || 0) > 0),
+    [wishlist],
+  );
+  const visible = wishlist.filter((product) =>
+    filter === "all" ? true : filter === "available" ? Number(product.stock || 0) > 0 : Number(product.stock || 0) < 1,
+  );
+  async function addAvailable() {
+    setAdding(true);
+    try {
+      for (const product of available) {
+        if (!cart.some((item) => String(item.id) === String(product.id))) {
+          await changeItem(product, 1);
+        }
+      }
+    } finally {
+      setAdding(false);
+    }
+  }
 
   return (
     <>
@@ -39,11 +63,22 @@ export default function Wishlist() {
           />
         ) : (
           <>
+            <div className="bz-wishlist-tools">
+              <div className="bz-segmented-control" aria-label="Filter saved products">
+                <button className={filter === "all" ? "is-active" : ""} onClick={() => setFilter("all")}>All <span>{wishlist.length}</span></button>
+                <button className={filter === "available" ? "is-active" : ""} onClick={() => setFilter("available")}>Available <span>{available.length}</span></button>
+                <button className={filter === "unavailable" ? "is-active" : ""} onClick={() => setFilter("unavailable")}>Unavailable <span>{wishlist.length - available.length}</span></button>
+              </div>
+              <button className="bz-button bz-wishlist-add-all" type="button" disabled={!available.length || adding || !sessionReady} onClick={addAvailable}>
+                <ShoppingBag size={16} /> {adding ? "Adding…" : "Add available"}
+              </button>
+            </div>
             <div className="bz-product-grid">
-              {wishlist.map((product) => (
+              {visible.map((product) => (
                 <ProductCard key={product.id} product={product} />
               ))}
             </div>
+            {!visible.length ? <div className="bz-inline-empty">No products in this view.</div> : null}
             <aside className="bz-wishlist-tip">
               <Sparkles size={18} />
               <span>

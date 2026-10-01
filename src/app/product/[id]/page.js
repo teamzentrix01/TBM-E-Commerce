@@ -89,6 +89,15 @@ export default function ProductPage() {
     };
   }, [id, store?.id, attempt]);
 
+  useEffect(() => {
+    if (!product) return;
+    try {
+      const previous = JSON.parse(localStorage.getItem("tbm-recent-products") || "[]");
+      const next = [product, ...previous.filter((item) => String(item.id) !== String(product.id))].slice(0, 8);
+      localStorage.setItem("tbm-recent-products", JSON.stringify(next));
+    } catch {}
+  }, [product]);
+
   const stock = Math.max(0, Math.floor(Number(product?.stock || 0)));
   const brand = product ? productBrandLabel(product) : "";
   const pack = product ? formatPackSize(product.unit) : "";
@@ -141,14 +150,9 @@ export default function ProductPage() {
           </div>
         ) : (
           <>
-            <section className="bz-detail">
-              <div className="bz-detail-media">
+            <section className="bz-detail" data-product-id={product.id}>
+              <div className="bz-detail-media" data-product-id={product.id}>
                 <ProductGallery product={product} />
-                {savingPct > 0 && (
-                  <span className="bz-discount bz-detail-media-badge">
-                    {savingPct}% OFF
-                  </span>
-                )}
                 <SaveProduct product={product} />
               </div>
               <div className="bz-detail-copy">
@@ -165,6 +169,7 @@ export default function ProductPage() {
                   )
                 ) : null}
                 <h1>{product.name}</h1>
+                <p className="bz-detail-code">Product code: {product.sku || product.barcode || product.id}</p>
 
                 <div className="bz-detail-chips" aria-label="Product highlights">
                   {pack ? (
@@ -179,37 +184,35 @@ export default function ProductPage() {
                   </span>
                 </div>
 
-                <div className="bz-detail-price">
-                  <Price product={product} />
-                  {savingPct > 0 && (
-                    <span className="bz-discount">{savingPct}% OFF</span>
+                <div className="bz-detail-purchase-card">
+                  <div className="bz-detail-price">
+                    <Price product={product} />
+                    {savingPct > 0 && (
+                      <span className="bz-discount">{savingPct}% OFF</span>
+                    )}
+                  </div>
+                  {saveAmount > 0 && (
+                    <p className="bz-detail-save">You save {money(saveAmount)} on this item</p>
                   )}
-                </div>
-                {saveAmount > 0 && (
-                  <p className="bz-detail-save">
-                    You save {money(saveAmount)} on this item
-                  </p>
-                )}
-                <small className="bz-muted">Inclusive of all taxes</small>
-                {stock > 0 && !storeVerified ? (
-                  <p className="bz-detail-availability bz-muted">
-                    Availability checked for your delivery location
-                  </p>
-                ) : null}
+                  <small className="bz-muted">Inclusive of all taxes</small>
+                  {stock > 0 && !storeVerified ? (
+                    <p className="bz-detail-availability bz-muted">Availability checked for your delivery location</p>
+                  ) : null}
 
-                <div className="bz-detail-actions">
-                  <AddToCart product={product} />
-                  <Link className="bz-detail-cart-link" href="/cart">
-                    View cart <ArrowRight size={16} />
-                  </Link>
+                  <div className="bz-detail-actions">
+                    <AddToCart product={product} />
+                    <Link className="bz-detail-cart-link" href="/cart">
+                      View cart <ArrowRight size={16} />
+                    </Link>
+                  </div>
                 </div>
 
                 <div className="bz-detail-benefits">
                   <div>
                     <Truck size={22} />
                     <span>
-                      <b>Local delivery</b>
-                      <small>Free on orders ₹499+</small>
+                      <b>Fast local delivery</b>
+                      <small>From your nearby Buyzaar store</small>
                     </span>
                   </div>
                   <div>
@@ -276,7 +279,7 @@ export default function ProductPage() {
             </section>
 
             {sameBrand.length > 0 && brand && (
-              <section className="bz-section">
+              <section className="bz-section bz-detail-recommendations">
                 <div className="bz-section-heading">
                   <div>
                     <span className="bz-eyebrow">SAME BRAND</span>
@@ -292,7 +295,7 @@ export default function ProductPage() {
               </section>
             )}
             {related.length > 0 && (
-              <section className="bz-section">
+              <section className="bz-section bz-detail-recommendations">
                 <div className="bz-section-heading">
                   <div>
                     <span className="bz-eyebrow">COMPLETE YOUR BASKET</span>

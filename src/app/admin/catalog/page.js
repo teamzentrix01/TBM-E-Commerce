@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Download,
   Upload,
@@ -19,6 +20,8 @@ import {
 } from "lucide-react";
 
 export default function AdminCatalogPage() {
+  const router = useRouter();
+  const [adminReady, setAdminReady] = useState(false);
   const [products, setProducts] = useState([]);
   const [totalProducts, setTotalProducts] = useState(0);
   const [page, setPage] = useState(1);
@@ -40,6 +43,25 @@ export default function AdminCatalogPage() {
 
   // UI status notification
   const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/me", { credentials: "same-origin", cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        const role = payload.data?.user?.role;
+        if (cancelled) return;
+        if (!["admin", "super_admin", "store_manager"].includes(role)) {
+          router.replace("/login?returnTo=/admin/catalog");
+          return;
+        }
+        setAdminReady(true);
+      })
+      .catch(() => router.replace("/login?returnTo=/admin/catalog"));
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
 
   const showToast = (msg, type = "success") => {
     setToast({ msg, type });
@@ -78,8 +100,9 @@ export default function AdminCatalogPage() {
   };
 
   useEffect(() => {
+    if (!adminReady) return;
     fetchCatalog();
-  }, [page, search]);
+  }, [adminReady, page, search]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -110,7 +133,7 @@ export default function AdminCatalogPage() {
     reader.onload = async () => {
       try {
         const csvText = String(reader.result || "");
-        const res = await fetch("/api/admin/products/import", {
+        const res = await fetch(`/api/admin/products/import?store_id=${storeId}`, {
           method: "POST",
           headers: { "Content-Type": "text/csv" },
           body: csvText,
@@ -153,7 +176,7 @@ export default function AdminCatalogPage() {
     setSavingProduct(true);
     try {
       const barcode = activeProduct.barcode;
-      const res = await fetch(`/api/admin/products/${barcode}`, {
+      const res = await fetch(`/api/admin/products/${barcode}?store_id=${storeId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -197,6 +220,16 @@ export default function AdminCatalogPage() {
     };
     reader.readAsDataURL(file);
   };
+
+  if (!adminReady) {
+    return (
+      <main className="min-h-screen grid place-items-center bg-gray-50 px-6">
+        <p className="text-sm text-gray-500" role="status">
+          Checking admin access…
+        </p>
+      </main>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 pb-16">
