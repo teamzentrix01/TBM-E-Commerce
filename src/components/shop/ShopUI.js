@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   ArrowRight,
   ChevronLeft,
@@ -474,11 +475,29 @@ export function ProductCard({ product }) {
 }
 
 export function ProductGrid({ products, loading = false }) {
+  const reduceMotion = useReducedMotion();
   return (
-    <div className="bz-product-grid" aria-busy={loading}>
-      {products.map((product) => (
-        <ProductCard key={product.id} product={product} />
-      ))}
+    <motion.div className="bz-product-grid" aria-busy={loading} layout={!reduceMotion}>
+      <AnimatePresence initial={false} mode="popLayout">
+        {products.map((product, index) => (
+          <motion.div
+            className="bz-product-grid-item"
+            key={product.id}
+            layout={!reduceMotion}
+            initial={reduceMotion ? false : { opacity: 0, y: 10, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reduceMotion ? undefined : { opacity: 0, y: -6, scale: 0.985 }}
+            transition={{
+              duration: reduceMotion ? 0 : 0.2,
+              delay: reduceMotion ? 0 : Math.min(index, 7) * 0.025,
+              ease: [0.16, 1, 0.3, 1],
+              layout: { duration: reduceMotion ? 0 : 0.24 },
+            }}
+          >
+            <ProductCard product={product} />
+          </motion.div>
+        ))}
+      </AnimatePresence>
       {loading
         ? Array.from({ length: products.length ? 4 : 8 }, (_, i) => (
             <div className="bz-skeleton-card" key={`loading-${i}`}>
@@ -489,7 +508,7 @@ export function ProductGrid({ products, loading = false }) {
             </div>
           ))
         : null}
-    </div>
+    </motion.div>
   );
 }
 

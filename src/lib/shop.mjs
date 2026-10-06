@@ -108,35 +108,103 @@ export function titleCaseLabel(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-/** Prefer product sub-categories for Blinkit-style home tiles. */
-export function buildShopCategories({ categories = [], products = [], limit = 20 } = {}) {
-  const fromSubs = [];
-  const seen = new Set();
+function parentCategoryId(record) {
+  return record?.category_id || record?.parent_id || record?.categoryId || null;
+}
+
+function listedProductCount(record) {
+  if (record?.product_count == null || record.product_count === "") return null;
+  const count = Number(record.product_count);
+  return Number.isFinite(count) ? count : null;
+}
+
+function coverProduct(products, { subCategoryId, categoryId }) {
+  return (
+    products.find((product) => {
+      if (!product?.image_url) return false;
+      if (subCategoryId != null) {
+        return String(product.sub_category_id) === String(subCategoryId);
+      }
+      return String(product.category_id) === String(categoryId);
+    }) || null
+  );
+}
+
+/**
+ * Home tiles follow the full public subcategory list from the catalogue.
+ * Products already on the page only supply a cover image and any subcategory
+ * the facet list has not caught up with yet.
+ */
+export function buildShopCategories({
+  categories = [],
+  subCategories = [],
+  products = [],
+  limit = 32,
+} = {}) {
+  const byId = new Map();
+  let order = 0;
+
+  for (const sub of filterPublicFacets(subCategories)) {
+    const count = listedProductCount(sub);
+    if (count === 0) continue;
+    const key = String(sub.id);
+    if (byId.has(key)) continue;
+    byId.set(key, {
+      id: sub.id,
+      name: titleCaseLabel(sub.name),
+      categoryId: parentCategoryId(sub),
+      kind: "subcategory",
+      productCount: count || 0,
+      order: order++,
+      imageProduct: coverProduct(products, { subCategoryId: sub.id }),
+    });
+  }
+
   for (const product of products) {
     const id = product.sub_category_id;
     const name = product.sub_category_name;
     if (!id || !isPublicLabel(name)) continue;
     const key = String(id);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    fromSubs.push({
-      id,
-      name: titleCaseLabel(name),
-      categoryId: product.category_id,
-      kind: "subcategory",
-      imageProduct: product.image_url ? product : null,
-    });
+    const existing = byId.get(key);
+    if (!existing) {
+      byId.set(key, {
+        id,
+        name: titleCaseLabel(name),
+        categoryId: product.category_id || null,
+        kind: "subcategory",
+        productCount: 0,
+        order: order++,
+        imageProduct: product.image_url ? product : null,
+      });
+      continue;
+    }
+    if (!existing.categoryId && product.category_id) {
+      existing.categoryId = product.category_id;
+    }
+    if (!existing.imageProduct && product.image_url) {
+      existing.imageProduct = product;
+    }
   }
-  if (fromSubs.length) return fromSubs.slice(0, limit);
 
-  const fromCats = filterPublicFacets(categories).map((category) => ({
+  if (byId.size) {
+    return [...byId.values()]
+      .sort(
+        (a, b) => b.productCount - a.productCount || a.order - b.order,
+      )
+      .slice(0, limit);
+  }
+
+  const fromCats = filterPublicFacets(categories).filter(
+    (category) => listedProductCount(category) !== 0,
+  );
+  if (!fromCats.length) return [];
+
+  return fromCats.slice(0, limit).map((category) => ({
     id: category.id,
     name: titleCaseLabel(category.name),
     categoryId: category.id,
     kind: "category",
-    imageProduct: null,
+    productCount: listedProductCount(category) || 0,
+    imageProduct: coverProduct(products, { categoryId: category.id }),
   }));
-  if (fromCats.length) return fromCats.slice(0, limit);
-
-  return [];
 }

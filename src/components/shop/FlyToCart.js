@@ -80,7 +80,7 @@ export function FlyToCartProvider({ children }) {
 
   const prepareFlight = useCallback(
     (product, origin) => {
-      if (reduceMotion || window.innerWidth > 900) return null;
+      if (reduceMotion) return null;
       const image = sourceImage(product, origin);
       const target = visibleCartTarget();
       const src = image?.currentSrc || image?.src;

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cartTotals, discount, listingUrl, sortProducts } from "../src/lib/shop.mjs";
+import { cartTotals, discount, listingUrl, sortProducts, buildShopCategories } from "../src/lib/shop.mjs";
 
 test("empty baskets never incur a delivery fee", () => {
   assert.deepEqual(cartTotals([]), { subtotal: 0, savings: 0, delivery: 0, total: 0 });
@@ -41,4 +41,45 @@ test("listing links round-trip search punctuation and combined filters", () => {
   for (const [key, value] of Object.entries(input)) assert.equal(url.searchParams.get(key), value);
   assert.equal(listingUrl({ q: "featured", sort: "featured" }), "/products?q=featured");
   assert.equal(listingUrl({ q: "", brand: "", sort: "featured" }), "/products");
+});
+
+test("home tiles use the full subcategory list, not only products already loaded", () => {
+  const tiles = buildShopCategories({
+    subCategories: [
+      { id: 9, name: "SNACKS", category_id: 1, product_count: 4 },
+      { id: 3, name: "Dairy", category_id: 1, product_count: 40 },
+      { id: 8, name: "TBM HO", category_id: 1, product_count: 12 },
+      { id: 4, name: "Pet care", category_id: 2, product_count: 0 },
+    ],
+    products: [
+      { id: 1, sub_category_id: 9, sub_category_name: "Snacks", category_id: 1 },
+      { id: 2, sub_category_id: 11, sub_category_name: "Household", category_id: 2, image_url: "house.jpg" },
+    ],
+    categories: [{ id: 1, name: "Food", product_count: 80 }],
+  });
+  assert.deepEqual(
+    tiles.map((tile) => tile.name),
+    ["Dairy", "Snacks", "Household"],
+  );
+  assert.equal(tiles[0].kind, "subcategory");
+  assert.equal(tiles[0].categoryId, 1);
+  assert.equal(tiles[1].imageProduct, null);
+  assert.equal(tiles[2].imageProduct.image_url, "house.jpg");
+});
+
+test("home tiles fall back to store categories and a product photo", () => {
+  const tiles = buildShopCategories({
+    categories: [
+      { id: 2, name: "NON FOOD", product_count: 10 },
+      { id: 1, name: "Food", product_count: 0 },
+    ],
+    products: [
+      { id: 5, category_id: 2, category_name: "NON FOOD" },
+      { id: 6, category_id: 2, category_name: "NON FOOD", image_url: "soap.jpg" },
+    ],
+  });
+  assert.equal(tiles.length, 1);
+  assert.equal(tiles[0].name, "Non Food");
+  assert.equal(tiles[0].kind, "category");
+  assert.equal(tiles[0].imageProduct.id, 6);
 });

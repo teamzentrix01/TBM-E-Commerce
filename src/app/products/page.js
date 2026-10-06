@@ -1,10 +1,12 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Coffee,
+  Check,
+  ChevronDown,
   ChevronRight,
   Grid2X2,
   House,
@@ -41,6 +43,13 @@ function CategoryRailIcon({ item }) {
   const Icon = categoryGlyph(item.name);
   return <Icon size={23} strokeWidth={1.8} aria-hidden="true" />;
 }
+
+const SORT_OPTIONS = [
+  { value: "featured", label: "Recommended" },
+  { value: "price-low", label: "Price: low to high" },
+  { value: "price-high", label: "Price: high to low" },
+  { value: "discount", label: "Biggest savings" },
+];
 
 function Results({ store, query, category, subcategory, brand, sort, attempt }) {
   const [products, setProducts] = useState([]);
@@ -142,20 +151,40 @@ function Listing() {
     ? params.get("sort")
     : "featured";
   const { store, error, retry } = useCatalogStore();
-  const [facets, setFacets] = useState({ categories: [], brands: [] });
+  const [facets, setFacets] = useState({ categories: [], subCategories: [], brands: [] });
   const [facetError, setFacetError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [open, setOpen] = useState(false);
+  const [sortOpen, setSortOpen] = useState(false);
+  const sortMenuRef = useRef(null);
+  useEffect(() => {
+    if (!sortOpen) return undefined;
+    function closeMenu(event) {
+      if (event.type === "keydown" && event.key !== "Escape") return;
+      if (
+        event.type === "pointerdown" &&
+        sortMenuRef.current?.contains(event.target)
+      ) return;
+      setSortOpen(false);
+    }
+    document.addEventListener("pointerdown", closeMenu);
+    document.addEventListener("keydown", closeMenu);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenu);
+      document.removeEventListener("keydown", closeMenu);
+    };
+  }, [sortOpen]);
   useEffect(() => {
     if (!store?.id) return;
     const controller = new AbortController();
-    setFacets({ categories: [], brands: [] });
+    setFacets({ categories: [], subCategories: [], brands: [] });
     setFacetError("");
     fetchStorefrontFacets(store.id, { signal: controller.signal })
       .then((data) => {
         if (controller.signal.aborted) return;
         setFacets({
           categories: filterPublicFacets(data.categories || []),
+          subCategories: filterPublicFacets(data.subCategories || []),
           brands: filterPublicFacets(data.brands || []),
         });
       })
@@ -182,9 +211,14 @@ function Listing() {
   const activeCategory = facets.categories.find(
     (item) => String(item.id) === category,
   );
+  const activeSubcategory = (facets.subCategories || []).find(
+    (item) => String(item.id) === subcategory,
+  );
   const title = query
     ? `Results for “${query}”`
-    : activeCategory?.name
+    : activeSubcategory?.name
+      ? titleCaseLabel(activeSubcategory.name)
+      : activeCategory?.name
       ? titleCaseLabel(activeCategory.name)
       : facets.brands.find((item) => String(item.id) === brand)?.name ||
         "Shop everyday essentials";
@@ -217,12 +251,23 @@ function Listing() {
             value: category,
           },
           {
+            key: "subcategory",
+            title: "Subcategory",
+            records: (facets.subCategories || []).filter((item) => {
+              if (!category) return true;
+              const parent = item.category_id || item.parent_id || item.categoryId;
+              if (parent == null || parent === "") return true;
+              return String(parent) === category;
+            }),
+            value: subcategory,
+          },
+          {
             key: "brand",
             title: "Brand",
             records: facets.brands,
             value: brand,
           },
-        ].map((group) => (
+        ].filter((group) => group.key !== "subcategory" || group.records.length).map((group) => (
           <fieldset key={group.key}>
             <legend>{group.title}</legend>
             <div className="bz-filter-options">
@@ -233,7 +278,7 @@ function Listing() {
                   checked={!group.value}
                   onChange={() => change(group.key, "")}
                 />
-                All {group.key === "brand" ? "brands" : "categories"}
+                All {group.key === "brand" ? "brands" : group.key === "subcategory" ? "subcategories" : "categories"}
               </label>
               {group.records.map((item) => (
                 <label key={item.id}>
@@ -335,19 +380,39 @@ function Listing() {
                   </span>
                 ) : null}
               </button>
-              <label className="bz-mobile-sort">
-                <span>Sort</span>
-                <select
-                  value={sort}
-                  onChange={(event) => change("sort", event.target.value)}
-                  aria-label="Sort products"
+              <div className="bz-mobile-sort-menu" ref={sortMenuRef}>
+                <button
+                  type="button"
+                  className="bz-mobile-sort"
+                  aria-haspopup="listbox"
+                  aria-expanded={sortOpen}
+                  onClick={() => setSortOpen((current) => !current)}
                 >
-                  <option value="featured">Recommended</option>
-                  <option value="price-low">Price: low to high</option>
-                  <option value="price-high">Price: high to low</option>
-                  <option value="discount">Biggest savings</option>
-                </select>
-              </label>
+                  <span>Sort</span>
+                  <b>{SORT_OPTIONS.find((item) => item.value === sort)?.label}</b>
+                  <ChevronDown size={15} />
+                </button>
+                {sortOpen ? (
+                  <div className="bz-mobile-sort-popover" role="listbox" aria-label="Sort products">
+                    {SORT_OPTIONS.map((option) => (
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={sort === option.value}
+                        className={sort === option.value ? "is-selected" : ""}
+                        key={option.value}
+                        onClick={() => {
+                          change("sort", option.value);
+                          setSortOpen(false);
+                        }}
+                      >
+                        <span>{option.label}</span>
+                        {sort === option.value ? <Check size={16} /> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
             {popularBrands.length > 0 && (
               <div className="bz-brand-chips" aria-label="Shop by brand">
@@ -390,7 +455,9 @@ function Listing() {
                   {
                     key: "subcategory",
                     value: subcategory,
-                    label: "Subcategory",
+                    label: activeSubcategory?.name
+                      ? titleCaseLabel(activeSubcategory.name)
+                      : "Subcategory",
                   },
                   {
                     key: "brand",

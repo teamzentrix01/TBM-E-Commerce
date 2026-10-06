@@ -34,10 +34,33 @@ if (!globalForPg._pgPool) {
 
 const pool = globalForPg._pgPool;
 
+const RETRYABLE_CONNECTION_ERRORS = new Set([
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEDOUT',
+]);
+
+async function queryWithConnectionRetry(text, params) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await pool.query(text, params);
+    } catch (error) {
+      if (attempt >= 2 || !RETRYABLE_CONNECTION_ERRORS.has(error?.code)) {
+        throw error;
+      }
+      const delay = 250 * 2 ** attempt;
+      console.warn(
+        `[Ecom DB] Connection lookup failed (${error.code}); retrying in ${delay}ms`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 export async function query(text, params = []) {
   const start = Date.now();
   try {
-    const res = await pool.query(text, params);
+    const res = await queryWithConnectionRetry(text, params);
     const duration = Date.now() - start;
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[Ecom DB] ${duration}ms — ${text.substring(0, 80)}`);

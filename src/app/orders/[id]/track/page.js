@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { motion, useReducedMotion } from "motion/react";
 import {
   ArrowLeft,
+  Bell,
+  BellRing,
   Clock3,
   MapPin,
   Navigation,
@@ -27,12 +30,24 @@ const LABELS = {
   cancelled: "Cancelled",
 };
 
+const TRACKING_STEPS = [
+  { status: "pending_store_acceptance", label: "Confirmed" },
+  { status: "accepted", label: "Accepted" },
+  { status: "picking", label: "Picking" },
+  { status: "packed", label: "Packed" },
+  { status: "dispatched", label: "On the way" },
+  { status: "delivered", label: "Delivered" },
+];
+
 export default function TrackOrderPage() {
+  const reduceMotion = useReducedMotion();
   const params = useParams();
   const router = useRouter();
   const { authReady, customer } = useStore();
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const previousStatusRef = useRef(null);
 
   const returnTo = `/orders/${params.id}/track`;
 
@@ -69,6 +84,45 @@ export default function TrackOrderPage() {
     return () => clearInterval(interval);
   }, [authReady, customer, loadTracking, returnTo, router]);
 
+  useEffect(() => {
+    setNotificationsEnabled(
+      typeof Notification !== "undefined" &&
+        Notification.permission === "granted" &&
+        localStorage.getItem("tbm-order-notifications") === "1",
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!order?.status) return;
+    const previous = previousStatusRef.current;
+    previousStatusRef.current = order.status;
+    if (!previous || previous === order.status || !notificationsEnabled) return;
+    const title = LABELS[order.status] || "Order updated";
+    const options = {
+      body: `${order.order_number}: ${title}`,
+      icon: "/icon.svg",
+      badge: "/favicon.png",
+      tag: `buyzaar-order-${order.id}`,
+      data: { url: returnTo },
+    };
+    navigator.serviceWorker?.ready
+      .then((registration) => registration.showNotification(title, options))
+      .catch(() => new Notification(title, options));
+  }, [notificationsEnabled, order?.id, order?.order_number, order?.status, returnTo]);
+
+  async function enableNotifications() {
+    if (typeof Notification === "undefined") {
+      setError("Order notifications are not supported in this browser.");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    const enabled = permission === "granted";
+    setNotificationsEnabled(enabled);
+    localStorage.setItem("tbm-order-notifications", enabled ? "1" : "0");
+    if (!enabled) setError("Allow notifications in your browser to receive order updates.");
+    else setError("");
+  }
+
   const mapUrl = useMemo(() => {
     if (order?.rider_latitude == null || order?.rider_longitude == null) {
       return "";
@@ -85,6 +139,16 @@ export default function TrackOrderPage() {
     ].join(",");
     return `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${latitude}%2C${longitude}`;
   }, [order?.rider_latitude, order?.rider_longitude]);
+
+  const normalizedStatus = order?.status === "billed" ? "packed" : order?.status;
+  const currentStep = order
+    ? Math.max(
+        0,
+        TRACKING_STEPS.findIndex((item) => item.status === normalizedStatus),
+      )
+    : 0;
+  const progress = (currentStep / (TRACKING_STEPS.length - 1)) * 100;
+  const trackingStopped = ["cancelled", "rejected"].includes(order?.status);
 
   if (!authReady || !customer) {
     return (
@@ -131,6 +195,60 @@ export default function TrackOrderPage() {
                   <p>{order.store_name}</p>
                 </div>
               </div>
+            </section>
+
+            <section className="checkout-card bz-live-timeline" aria-label="Order progress">
+              <div className="bz-live-timeline-head">
+                <div>
+                  <small>LIVE ORDER PROGRESS</small>
+                  <h2>{trackingStopped ? LABELS[order.status] : "Your order journey"}</h2>
+                </div>
+                {!trackingStopped ? (
+                  <button
+                    type="button"
+                    className={`bz-tracking-notify${notificationsEnabled ? " is-enabled" : ""}`}
+                    onClick={enableNotifications}
+                    disabled={notificationsEnabled}
+                  >
+                    {notificationsEnabled ? <BellRing size={15} /> : <Bell size={15} />}
+                    {notificationsEnabled ? "Notifications on" : "Notify me"}
+                  </button>
+                ) : null}
+              </div>
+              {trackingStopped ? (
+                <p className="bz-live-timeline-stopped">
+                  This order will not progress further. Visit your orders for details.
+                </p>
+              ) : (
+                <div className="bz-live-timeline-steps">
+                  <div className="bz-live-timeline-line" aria-hidden="true">
+                    <motion.span
+                      initial={false}
+                      animate={{ width: `${progress}%` }}
+                      transition={{ duration: reduceMotion ? 0 : 0.55, ease: [0.16, 1, 0.3, 1] }}
+                    />
+                  </div>
+                  {TRACKING_STEPS.map((item, index) => {
+                    const complete = index < currentStep;
+                    const active = index === currentStep;
+                    return (
+                      <div
+                        key={item.status}
+                        className={`bz-live-timeline-step${complete ? " is-complete" : ""}${active ? " is-active" : ""}`}
+                        aria-current={active ? "step" : undefined}
+                      >
+                        <motion.span
+                          animate={active && !reduceMotion ? { scale: [1, 1.12, 1] } : { scale: 1 }}
+                          transition={active && !reduceMotion ? { duration: 1.8, repeat: Infinity } : { duration: 0 }}
+                        >
+                          {complete ? "✓" : index + 1}
+                        </motion.span>
+                        <small>{item.label}</small>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             {mapUrl ? (

@@ -52,10 +52,19 @@ export default function MobileBottomNav() {
   if (pathname?.startsWith("/admin") || pathname?.startsWith("/checkout")) {
     return null;
   }
+  const activeIndex = Math.max(
+    0,
+    TABS.findIndex((tab) => tab.match(pathname || "/")),
+  );
   return (
-    <nav className="bz-bottom-nav" aria-label="Primary">
-      {TABS.map(({ href, label, icon: Icon, match, cartTarget, showBadge }) => {
-        const active = match(pathname || "/");
+    <nav
+      className="bz-bottom-nav"
+      aria-label="Primary"
+      style={{ "--bz-tab-index": activeIndex }}
+    >
+      <span className="bz-bottom-nav-glass" aria-hidden="true" />
+      {TABS.map(({ href, label, icon: Icon, match, cartTarget, showBadge }, index) => {
+        const active = index === activeIndex && match(pathname || "/");
         const count = href === "/cart" ? cartCount : wishlist.length;
         return (
           <Link

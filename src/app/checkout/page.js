@@ -411,6 +411,7 @@ export default function Checkout() {
         </ol>
         <div className="bz-checkout-layout">
           <section
+            key={step}
             className="bz-checkout-card"
             aria-busy={submitting || addressBusy}
           >

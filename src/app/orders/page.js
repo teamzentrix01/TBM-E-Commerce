@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   CalendarDays,
   Check,
@@ -28,6 +29,8 @@ import {
   fetchCustomerOrders,
 } from "@/lib/ecommerceApi";
 import { useStore } from "@/context/StoreContext";
+import { useCartSession } from "@/context/CartSessionContext";
+import { fetchProduct } from "@/lib/api";
 import { accountLoginHref, rememberLoginReturn } from "@/lib/authNav.mjs";
 
 const money = (value) =>
@@ -240,7 +243,9 @@ function OrderItemImage({ item, className = "" }) {
 }
 
 export default function Orders() {
-  const { authReady, customer } = useStore();
+  const router = useRouter();
+  const { activeStore, authReady, customer } = useStore();
+  const { changeItem, sessionReady } = useCartSession();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -249,6 +254,7 @@ export default function Orders() {
   const [actionError, setActionError] = useState("");
   const [activeTab, setActiveTab] = useState("active");
   const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const [actionNotice, setActionNotice] = useState("");
 
   useEffect(() => {
     if (!authReady) return;
@@ -318,6 +324,63 @@ export default function Orders() {
       );
     } catch (requestError) {
       setActionError(requestError.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function buyAgain(order) {
+    if (!activeStore?.id) {
+      setActionError("Choose your delivery location before buying again.");
+      return;
+    }
+    if (!sessionReady) return;
+    setBusyId(order.id);
+    setActionError("");
+    setActionNotice("");
+    try {
+      const results = await Promise.all(
+        (order.items || []).map(async (orderedItem) => {
+          try {
+            const productId = orderedItem.product_id || orderedItem.id;
+            const data = await fetchProduct(productId, activeStore.id);
+            const product = data.product || data;
+            const stock = Math.max(0, Math.floor(Number(product.stock || 0)));
+            if (!stock) return { added: false, name: orderedItem.name };
+            const qty = Math.min(
+              Math.max(1, Number(orderedItem.qty || 1)),
+              stock,
+            );
+            await changeItem(
+              {
+                ...orderedItem,
+                ...product,
+                id: product.id || productId,
+                store_id: activeStore.id,
+              },
+              qty,
+            );
+            return { added: true, limited: qty < Number(orderedItem.qty || 1) };
+          } catch {
+            return { added: false, name: orderedItem.name };
+          }
+        }),
+      );
+      const added = results.filter((item) => item.added).length;
+      const unavailable = results.length - added;
+      if (!added) {
+        throw new Error("These products are not available at your selected store.");
+      }
+      if (unavailable) {
+        setActionNotice(
+          `${added} item${added === 1 ? "" : "s"} added. ${unavailable} unavailable item${unavailable === 1 ? " was" : "s were"} skipped.`,
+        );
+        window.setTimeout(() => router.push("/cart"), 1200);
+      } else {
+        router.push("/cart");
+      }
+    } catch (requestError) {
+      setActionError(requestError.message || "Could not add this order again.");
     } finally {
       setBusyId(null);
     }
@@ -437,6 +500,11 @@ export default function Orders() {
             {actionError && (
               <p className="bz-notice bz-error" role="alert">
                 {actionError}
+              </p>
+            )}
+            {actionNotice && (
+              <p className="bz-notice bz-green" role="status">
+                {actionNotice}
               </p>
             )}
             {visibleOrders.length === 0 ? (
@@ -579,9 +647,14 @@ export default function Orders() {
                       </button>
                     )}
                     {isDelivered && (
-                      <Link href="/">
-                        <RotateCcw /> Shop again
-                      </Link>
+                      <button
+                        type="button"
+                        disabled={busyId === order.id || !sessionReady}
+                        onClick={() => buyAgain(order)}
+                      >
+                        <RotateCcw />
+                        {busyId === order.id ? "Checking items..." : "Buy again"}
+                      </button>
                     )}
                     {canCancel && (
                       <button

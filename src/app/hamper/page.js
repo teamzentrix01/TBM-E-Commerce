@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   ArrowRight,
   Gift,
@@ -32,6 +33,7 @@ const TABS = [
 const MESSAGE_MAX = 120;
 
 function HamperBuilder() {
+  const reduceMotion = useReducedMotion();
   const params = useSearchParams();
   const router = useRouter();
   const { store, error: storeError } = useCatalogStore();
@@ -594,32 +596,49 @@ function HamperBuilder() {
                     }
                   >
                     <div className="bz-hamper-basket-rim" />
-                    <div className="bz-hamper-basket-items">
+                    <motion.div className="bz-hamper-basket-items" layout={!reduceMotion}>
                       {selected.length === 0 ? (
                         <p>Add products to preview your gift box.</p>
                       ) : (
-                        selected.slice(0, 8).map((item, index) => (
-                          <div
-                            key={`${item.id}-${index}`}
+                        <AnimatePresence initial={false} mode="popLayout">
+                        {selected.slice(0, 8).map((item, index) => (
+                          <motion.div
+                            key={item.id}
                             className="bz-hamper-basket-thumb"
-                            style={{
-                              zIndex: index + 1,
-                              transform: `translate(${(index % 4) * 10 - 12}px, ${Math.floor(index / 4) * -8}px) rotate(${(index % 3) * 4 - 4}deg)`,
+                            layout={!reduceMotion}
+                            initial={reduceMotion ? false : { opacity: 0, y: -42, scale: 0.65, rotate: -10 }}
+                            animate={{
+                              opacity: 1,
+                              x: (index % 4) * 10 - 12,
+                              y: Math.floor(index / 4) * -8,
+                              scale: 1,
+                              rotate: (index % 3) * 4 - 4,
                             }}
+                            exit={reduceMotion ? undefined : { opacity: 0, y: -18, scale: 0.72 }}
+                            transition={{ type: "spring", stiffness: 420, damping: 28 }}
+                            style={{ zIndex: index + 1 }}
                           >
                             <ProductImage product={item} />
-                          </div>
-                        ))
+                          </motion.div>
+                        ))}
+                        </AnimatePresence>
                       )}
-                    </div>
+                    </motion.div>
                     <div className="bz-hamper-basket-base" />
                   </div>
+                  <AnimatePresence initial={false}>
                   {giftMessage.trim() ? (
-                    <div className="bz-hamper-card-preview">
+                    <motion.div
+                      className="bz-hamper-card-preview"
+                      initial={reduceMotion ? false : { opacity: 0, y: 8, rotate: -1 }}
+                      animate={{ opacity: 1, y: 0, rotate: 0 }}
+                      exit={reduceMotion ? undefined : { opacity: 0, y: 5 }}
+                    >
                       <span>Gift card</span>
                       <p>{giftMessage.trim()}</p>
-                    </div>
+                    </motion.div>
                   ) : null}
+                  </AnimatePresence>
                 </div>
 
                 <h2>Your hamper</h2>

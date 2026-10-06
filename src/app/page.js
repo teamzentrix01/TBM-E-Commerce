@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -14,7 +14,7 @@ import {
 import AppHeader, { PageFooter } from "@/components/AppHeader";
 import { ErrorState, ProductGrid, ProductImage } from "@/components/shop/ShopUI";
 import useCatalogStore from "@/components/shop/useCatalogStore";
-import { fetchCategories, fetchProducts, fetchStorefrontBanners, fetchStorefrontHampers } from "@/lib/api";
+import { fetchCategories, fetchProducts, fetchStorefrontBanners, fetchStorefrontFacets, fetchStorefrontHampers } from "@/lib/api";
 import { resolveHomeBanners } from "@/lib/banners.mjs";
 import {
   buildShopCategories,
@@ -38,6 +38,8 @@ export default function Home() {
   const { store, ready, error: storeError, retry } = useCatalogStore();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [subCategories, setSubCategories] = useState([]);
+  const [categoryCovers, setCategoryCovers] = useState({});
   const [banners, setBanners] = useState(() => resolveHomeBanners(null));
   const [readyPacks, setReadyPacks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,8 +51,8 @@ export default function Home() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreProductsError, setMoreProductsError] = useState(false);
   const [promoIndex, setPromoIndex] = useState(0);
+  const [promoCarousel, setPromoCarousel] = useState(false);
   const [recentProducts, setRecentProducts] = useState([]);
-  const promoTouchStart = useRef(null);
 
   useEffect(() => {
     try {
@@ -71,6 +73,8 @@ export default function Home() {
       setLoading(false);
       setProducts([]);
       setCategories([]);
+      setSubCategories([]);
+      setCategoryCovers({});
       setBanners(resolveHomeBanners(null));
       setReadyPacks([]);
       setHasMoreProducts(false);
@@ -87,11 +91,29 @@ export default function Home() {
     setVisibleSavingsCount(8);
     setLoadingMore(false);
     setMoreProductsError(false);
-    fetchCategories(store.id)
-      .then((categoryData) => {
-        if (!cancelled) setCategories(categoryData?.records || []);
+    setSubCategories([]);
+    setCategoryCovers({});
+    fetchStorefrontFacets(store.id, { signal: controller.signal })
+      .then((facetData) => {
+        if (cancelled) return;
+        const nextCategories = facetData?.categories || [];
+        setSubCategories(facetData?.subCategories || []);
+        if (nextCategories.length) {
+          setCategories(nextCategories);
+          return;
+        }
+        return fetchCategories(store.id).then((categoryData) => {
+          if (!cancelled) setCategories(categoryData?.records || []);
+        });
       })
-      .catch(() => {});
+      .catch((failure) => {
+        if (cancelled || failure?.name === "AbortError") return;
+        fetchCategories(store.id)
+          .then((categoryData) => {
+            if (!cancelled) setCategories(categoryData?.records || []);
+          })
+          .catch(() => {});
+      });
     fetchStorefrontBanners(store.id, { signal: controller.signal })
       .then((bannerData) => {
         if (!cancelled) setBanners(resolveHomeBanners(bannerData));
@@ -185,24 +207,69 @@ export default function Home() {
   const showCatalogLoading = !ready || (loading && !products.length);
   const shopCategories = buildShopCategories({
     categories,
+    subCategories,
     products,
-    limit: 20,
+    limit: 32,
   });
+  const coverKey = shopCategories
+    .filter((category) => category.kind === "subcategory" && !category.imageProduct)
+    .map((category) => String(category.id))
+    .join(",");
+
+  useEffect(() => {
+    if (!store?.id || !coverKey) return undefined;
+    const missingIds = coverKey.split(",");
+    let cancelled = false;
+    Promise.all(
+      missingIds.map(async (id) => {
+        try {
+          const data = await fetchProducts({
+            storeId: store.id,
+            subCategoryId: id,
+            pageSize: 6,
+          });
+          const product =
+            (data.records || []).find((item) => item.image_url) || null;
+          return [id, product];
+        } catch {
+          return [id, null];
+        }
+      }),
+    ).then((pairs) => {
+      if (cancelled) return;
+      setCategoryCovers((current) => {
+        const next = { ...current };
+        for (const [id, product] of pairs) next[id] = product;
+        return next;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [store?.id, coverKey]);
   const { hero, promoCards, strip } = banners;
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 801px)");
+    const sync = () => setPromoCarousel(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     setPromoIndex(0);
   }, [promoCards.length]);
 
   useEffect(() => {
-    if (promoCards.length < 2) return undefined;
+    if (!promoCarousel || promoCards.length < 2) return undefined;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (reducedMotion.matches) return undefined;
     const timer = window.setInterval(() => {
       setPromoIndex((current) => (current + 1) % promoCards.length);
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [promoCards.length]);
+  }, [promoCarousel, promoCards.length]);
 
   return (
     <>
@@ -272,26 +339,11 @@ export default function Home() {
           <section
             className="bz-promo-carousel"
             aria-label="Featured offers"
-            aria-roledescription="carousel"
-            onTouchStart={(event) => {
-              promoTouchStart.current = event.touches[0]?.clientX ?? null;
-            }}
-            onTouchEnd={(event) => {
-              if (promoCards.length < 2) return;
-              const start = promoTouchStart.current;
-              const end = event.changedTouches[0]?.clientX;
-              promoTouchStart.current = null;
-              if (start == null || end == null || Math.abs(end - start) < 45) return;
-              setPromoIndex((current) =>
-                end < start
-                  ? (current + 1) % promoCards.length
-                  : (current - 1 + promoCards.length) % promoCards.length,
-              );
-            }}
+            aria-roledescription={promoCarousel ? "carousel" : undefined}
           >
           <div
             className="bz-promo-grid"
-            style={{ "--bz-promo-index": promoIndex }}
+            style={promoCarousel ? { "--bz-promo-index": promoIndex } : undefined}
           >
             {promoCards.map((card) => (
               <Link
@@ -314,7 +366,7 @@ export default function Home() {
               </Link>
             ))}
           </div>
-          {promoCards.length > 1 ? (
+          {promoCarousel && promoCards.length > 1 ? (
             <div className="bz-promo-dots" aria-label="Choose featured offer">
               {promoCards.map((card, index) => (
                 <button
@@ -350,6 +402,7 @@ export default function Home() {
             </Link>
             {shopCategories.map((category, index) => {
               const product =
+                categoryCovers[String(category.id)] ||
                 category.imageProduct ||
                 products.find(
                   (item) =>

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -25,9 +26,10 @@ import { useCartSession } from "@/context/CartSessionContext";
 import { fetchProducts } from "@/lib/api";
 import { accountLoginHref, rememberLoginReturn } from "@/lib/authNav.mjs";
 import { readHamperGiftMeta } from "@/lib/hampers.mjs";
-import { cartTotals, money } from "@/lib/shop.mjs";
+import { cartTotals, FREE_DELIVERY_MINIMUM, money } from "@/lib/shop.mjs";
 
 export default function CartPage() {
+  const reduceMotion = useReducedMotion();
   const { activeStore, authReady, cart, cartCount, customer, ready } =
     useStore();
   const {
@@ -102,6 +104,14 @@ export default function CartPage() {
     }
   }
   const totals = cartTotals(cart);
+  const deliveryProgress = Math.min(
+    100,
+    (totals.subtotal / FREE_DELIVERY_MINIMUM) * 100,
+  );
+  const deliveryRemaining = Math.max(
+    0,
+    FREE_DELIVERY_MINIMUM - totals.subtotal,
+  );
   useEffect(() => () => clearTimeout(undoTimerRef.current), []);
   async function removeWithUndo(item) {
     const removed = await change(item, -item.qty);
@@ -207,14 +217,51 @@ export default function CartPage() {
                     </small>
                   </span>
                 </div>
+                <div
+                  className={`bz-delivery-progress${deliveryRemaining === 0 ? " is-unlocked" : ""}`}
+                  role="status"
+                  aria-label={
+                    deliveryRemaining > 0
+                      ? `${money(deliveryRemaining)} away from free delivery`
+                      : "Free delivery unlocked"
+                  }
+                >
+                  <div className="bz-delivery-progress-copy">
+                    <span>
+                      <Truck size={16} />
+                      <b>
+                        {deliveryRemaining > 0
+                          ? `Add ${money(deliveryRemaining)} for free delivery`
+                          : "You unlocked free delivery"}
+                      </b>
+                    </span>
+                    <small>{Math.round(deliveryProgress)}%</small>
+                  </div>
+                  <div className="bz-delivery-progress-track" aria-hidden="true">
+                    <motion.span
+                      initial={false}
+                      animate={{ width: `${deliveryProgress}%` }}
+                      transition={{ duration: reduceMotion ? 0 : 0.36, ease: [0.16, 1, 0.3, 1] }}
+                    />
+                  </div>
+                </div>
                 {(error || syncError) && (
                   <p className="bz-notice" role="alert">
                     {error || syncError}
                   </p>
                 )}
-                <div className="bz-cart-items">
+                <motion.div className="bz-cart-items" layout={!reduceMotion}>
+                  <AnimatePresence initial={false} mode="popLayout">
                   {cart.map((item) => (
-                    <article className="bz-cart-row" key={item.id}>
+                    <motion.article
+                      className="bz-cart-row"
+                      key={item.id}
+                      layout={!reduceMotion}
+                      initial={reduceMotion ? false : { opacity: 0, x: -12 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={reduceMotion ? undefined : { opacity: 0, x: 18, height: 0, paddingTop: 0, paddingBottom: 0 }}
+                      transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+                    >
                       <Link
                         className="bz-cart-image"
                         href={`/product/${item.id}`}
@@ -245,9 +292,10 @@ export default function CartPage() {
                           {money(Number(item.selling_price) * item.qty)}
                         </strong>
                       </div>
-                    </article>
+                    </motion.article>
                   ))}
-                </div>
+                  </AnimatePresence>
+                </motion.div>
               </section>
               <OrderSummary items={cart}>
                 {!customer && authReady ? (
